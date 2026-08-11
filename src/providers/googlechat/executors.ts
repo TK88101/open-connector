@@ -1,7 +1,14 @@
 import type { CredentialValidators, ProviderExecutors } from "../../core/types.ts";
 import type { OAuthProviderContext } from "../provider-runtime.ts";
 
-import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
+import {
+  compactObject,
+  optionalBoolean,
+  optionalInteger,
+  optionalRawString,
+  optionalRecord,
+  optionalString,
+} from "../../core/cast.ts";
 import { asObject, googleJsonRequest } from "../googledrive/runtime-shared.ts";
 import { defineOAuthProviderExecutors, ProviderRequestError } from "../provider-runtime.ts";
 
@@ -151,9 +158,9 @@ function normalizeMessage(value: unknown): Record<string, unknown> {
     name,
     messageId: segments.length >= 4 ? segments.slice(3).join("/") : name,
     spaceName: optionalString(space?.name) ?? (segments.length >= 2 ? segments.slice(0, 2).join("/") : undefined),
-    text: optionalString(payload.text),
-    formattedText: optionalString(payload.formattedText),
-    argumentText: optionalString(payload.argumentText),
+    text: optionalRawString(payload.text),
+    formattedText: optionalRawString(payload.formattedText),
+    argumentText: optionalRawString(payload.argumentText),
     createTime: optionalString(payload.createTime),
     lastUpdateTime: optionalString(payload.lastUpdateTime),
     deleteTime: optionalString(payload.deleteTime),
@@ -184,7 +191,8 @@ function resolveSpaceName(value: unknown, message: string): string {
   const raw = requireString(value, message);
   const trimmed = trimSlashes(raw);
   const name = trimmed.startsWith("spaces/") ? trimmed : `spaces/${trimmed}`;
-  if (!spaceNamePattern.test(name)) {
+  const spaceId = name.slice("spaces/".length);
+  if (!spaceNamePattern.test(name) || spaceId === "." || spaceId === "..") {
     throw new ProviderRequestError(400, `space must be spaces/{space} or a bare space id, received "${raw}"`);
   }
 
@@ -199,7 +207,14 @@ function resolveMessageName(input: Record<string, unknown>): string {
   const raw = requireString(input.message, "message is required");
   const trimmed = trimSlashes(raw);
   if (trimmed.startsWith("spaces/")) {
-    if (!messageNamePattern.test(trimmed)) {
+    const [, spaceId, , messageId] = trimmed.split("/");
+    if (
+      !messageNamePattern.test(trimmed) ||
+      spaceId === "." ||
+      spaceId === ".." ||
+      messageId === "." ||
+      messageId === ".."
+    ) {
       throw new ProviderRequestError(
         400,
         `message must be spaces/{space}/messages/{message} when it starts with spaces/, received "${raw}"`,
@@ -211,7 +226,7 @@ function resolveMessageName(input: Record<string, unknown>): string {
 
   const spaceName = resolveSpaceName(input.space, "space is required when message is a bare message id");
   const name = `${spaceName}/messages/${trimmed}`;
-  if (!messageNamePattern.test(name)) {
+  if (!messageNamePattern.test(name) || trimmed === "." || trimmed === "..") {
     throw new ProviderRequestError(400, `message must be a bare message id, received "${raw}"`);
   }
 

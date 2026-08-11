@@ -42,7 +42,7 @@ describe("googleRequest fallback error messages", () => {
       googleRequest(url, { accessToken, fetcher: hangingFetcher, timeoutMs: 5, service: "googlechat" }),
     );
 
-    expect(message).toBe("googlechat request timed out after 1 seconds");
+    expect(message).toBe("googlechat request timed out after 1 second");
   });
 
   it("names the calling service when a GET carries a body", async () => {

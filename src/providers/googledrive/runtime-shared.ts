@@ -201,10 +201,9 @@ async function googleFetchWithTimeout(
     });
   } catch (error) {
     if (didTimeout && isAbortLikeError(error)) {
-      throw new ProviderRequestError(
-        502,
-        `${input.service} request timed out after ${Math.max(1, Math.ceil(timeoutMs / 1000))} seconds`,
-      );
+      const timeoutSeconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+      const unit = timeoutSeconds === 1 ? "second" : "seconds";
+      throw new ProviderRequestError(502, `${input.service} request timed out after ${timeoutSeconds} ${unit}`);
     }
     throw error;
   } finally {
