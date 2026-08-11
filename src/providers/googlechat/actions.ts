@@ -7,7 +7,7 @@ import { googleChatMessagesReadonlyScope, googleChatSpacesReadonlyScope } from "
 const service = "googlechat";
 
 interface GoogleChatActionSource {
-  name: GoogleChatActionName;
+  name: string;
   description: string;
   requiredScopes: string[];
   inputSchema: JsonSchema;
@@ -74,7 +74,7 @@ const actions: GoogleChatActionSource[] = [
     "list_spaces",
     "List the Google Chat spaces the authenticated user is a member of, with optional filtering and pagination.",
     [googleChatSpacesReadonlyScope],
-    input({
+    s.actionInput({
       filter: s.nonEmptyString('A Google Chat filter expression, such as spaceType = "SPACE".'),
       pageSize: s.integer("The maximum number of spaces to return.", { minimum: 1, maximum: 1000 }),
       pageToken: s.nonEmptyString("A pagination token returned by a previous list_spaces call."),
@@ -88,7 +88,7 @@ const actions: GoogleChatActionSource[] = [
     "get_space",
     "Retrieve the details of a single Google Chat space.",
     [googleChatSpacesReadonlyScope],
-    input(
+    s.actionInput(
       {
         space: s.nonEmptyString("The space to retrieve, either spaces/{space} or the bare {space} ID."),
       },
@@ -100,7 +100,7 @@ const actions: GoogleChatActionSource[] = [
     "list_messages",
     "List the message history of a Google Chat space, with optional filtering, ordering, and pagination.",
     [googleChatMessagesReadonlyScope],
-    input(
+    s.actionInput(
       {
         space: s.nonEmptyString("The space whose messages to list, either spaces/{space} or the bare {space} ID."),
         filter: s.nonEmptyString(
@@ -124,7 +124,7 @@ const actions: GoogleChatActionSource[] = [
     "get_message",
     "Retrieve a single Google Chat message by its resource name, or by space and message ID.",
     [googleChatMessagesReadonlyScope],
-    input(
+    s.actionInput(
       {
         message: s.nonEmptyString(
           "The message to retrieve, either the full spaces/{space}/messages/{message} name or the bare {message} ID.",
@@ -144,10 +144,8 @@ export const googleChatActions: ActionDefinition[] = actions.map((source) =>
   }),
 );
 
-export type GoogleChatActionName = "list_spaces" | "get_space" | "list_messages" | "get_message";
-
 function action(
-  name: GoogleChatActionName,
+  name: string,
   description: string,
   requiredScopes: string[],
   inputSchema: JsonSchema,
@@ -160,8 +158,4 @@ function action(
     inputSchema,
     outputSchema,
   };
-}
-
-function input(properties: Record<string, JsonSchema>, required: string[] = []): JsonSchema {
-  return s.actionInput(properties, required);
 }

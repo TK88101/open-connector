@@ -29,41 +29,33 @@ export {
 
 export type GoogleQueryValue = string | readonly string[] | undefined;
 
-const service = "googledrive";
+const defaultService = "googledrive";
 const googleDefaultRequestTimeoutMs = 30_000;
 
-export async function googleJsonRequest<T>(
-  url: string,
-  input: {
-    accessToken: string;
-    fetcher: ProviderFetch;
-    signal?: AbortSignal;
-    method?: string;
-    query?: Record<string, GoogleQueryValue>;
-    body?: unknown;
-    rawBody?: BodyInit;
-    headers?: Record<string, string>;
-    timeoutMs?: number;
-  },
-): Promise<T> {
+export interface GoogleRequestOptions {
+  accessToken: string;
+  fetcher: ProviderFetch;
+  signal?: AbortSignal;
+  method?: string;
+  query?: Record<string, GoogleQueryValue>;
+  body?: unknown;
+  rawBody?: BodyInit;
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+  /**
+   * Provider slug used in the fallback error messages this module generates itself.
+   * Defaults to Google Drive so existing callers keep their current wording.
+   */
+  service?: string;
+}
+
+export async function googleJsonRequest<T>(url: string, input: GoogleRequestOptions): Promise<T> {
   const response = await googleRequest(url, input);
   return (await response.json()) as T;
 }
 
-export async function googleRequest(
-  url: string,
-  input: {
-    accessToken: string;
-    fetcher: ProviderFetch;
-    signal?: AbortSignal;
-    method?: string;
-    query?: Record<string, GoogleQueryValue>;
-    body?: unknown;
-    rawBody?: BodyInit;
-    headers?: Record<string, string>;
-    timeoutMs?: number;
-  },
-): Promise<Response> {
+export async function googleRequest(url: string, input: GoogleRequestOptions): Promise<Response> {
+  const service = input.service ?? defaultService;
   const target = new URL(url);
   for (const [key, value] of Object.entries(input.query ?? {})) {
     if (Array.isArray(value)) {
@@ -105,9 +97,10 @@ export async function googleRequest(
     fetcher: input.fetcher,
     timeoutMs: input.timeoutMs ?? googleDefaultRequestTimeoutMs,
     init: requestInit,
+    service,
   });
 
-  await assertGoogleResponse(response);
+  await assertGoogleResponse(response, service);
   return response;
 }
 
@@ -177,6 +170,7 @@ async function googleFetchWithTimeout(
     fetcher: ProviderFetch;
     timeoutMs?: number;
     init?: RequestInit;
+    service: string;
   },
 ): Promise<Response> {
   const timeoutMs = input.timeoutMs ?? googleDefaultRequestTimeoutMs;
@@ -209,7 +203,7 @@ async function googleFetchWithTimeout(
     if (didTimeout && isAbortLikeError(error)) {
       throw new ProviderRequestError(
         502,
-        `${service} request timed out after ${Math.max(1, Math.ceil(timeoutMs / 1000))} seconds`,
+        `${input.service} request timed out after ${Math.max(1, Math.ceil(timeoutMs / 1000))} seconds`,
       );
     }
     throw error;
@@ -225,16 +219,16 @@ function hasContentTypeHeader(headers: Record<string, string>): boolean {
   return Object.keys(headers).some((key) => key.toLowerCase() === "content-type");
 }
 
-async function assertGoogleResponse(response: Response): Promise<void> {
+async function assertGoogleResponse(response: Response, service: string): Promise<void> {
   if (response.ok) {
     return;
   }
 
-  const { message, details } = await extractGoogleError(response);
+  const { message, details } = await extractGoogleError(response, service);
   throw new ProviderRequestError(response.status, message, details);
 }
 
-async function extractGoogleError(response: Response): Promise<{ message: string; details: unknown }> {
+async function extractGoogleError(response: Response, service: string): Promise<{ message: string; details: unknown }> {
   const rawText = await response.text().catch(() => "");
   if (!rawText) {
     return {

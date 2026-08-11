@@ -1,6 +1,5 @@
 import type { CredentialValidators, ProviderExecutors } from "../../core/types.ts";
 import type { OAuthProviderContext } from "../provider-runtime.ts";
-import type { GoogleChatActionName } from "./actions.ts";
 
 import { compactObject, optionalBoolean, optionalInteger, optionalRecord, optionalString } from "../../core/cast.ts";
 import { asObject, googleJsonRequest } from "../googledrive/runtime-shared.ts";
@@ -26,7 +25,7 @@ interface ListMessagesPayload {
   nextPageToken?: string | null;
 }
 
-export const googleChatActionHandlers: Record<GoogleChatActionName, GoogleChatActionHandler> = {
+export const googleChatActionHandlers: Record<string, GoogleChatActionHandler> = {
   list_spaces: listSpaces,
   get_space: getSpace,
   list_messages: listMessages,
@@ -45,6 +44,7 @@ export const credentialValidators: CredentialValidators = {
       accessToken: input.accessToken,
       fetcher,
       signal,
+      service,
     });
     return {
       profile: {
@@ -234,6 +234,7 @@ function googleChatJsonRequest<T>(
     method: input.method,
     query: input.query,
     body: input.body,
+    service,
   });
 }
 
