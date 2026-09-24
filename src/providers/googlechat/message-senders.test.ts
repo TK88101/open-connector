@@ -8,6 +8,7 @@ const accessToken = "test-token";
 interface FakeSender {
   name: string;
   type: string;
+  displayName?: string;
 }
 
 interface FakeOptions {
@@ -150,6 +151,20 @@ describe("Google Chat message sender names", () => {
     expect((result as { messages: { sender: { displayName: string } }[] }).messages[200].sender.displayName).toBe(
       "Person201",
     );
+  });
+
+  it("keeps a sender name Google Chat already supplied and does not look it up", async () => {
+    const { requests, fetcher } = fakeGoogle({
+      messages: [{ name: "spaces/A/messages/1", sender: { ...humanSender("1"), displayName: "Chat Name" } }],
+      batchStatus: 403,
+    });
+
+    const result = await googleChatActionHandlers.list_messages({ space: "A" }, { accessToken, fetcher });
+
+    // Chat fills in displayName itself under app authentication; a failed or
+    // redundant directory lookup must not overwrite it with null.
+    expect(result).toMatchObject({ messages: [{ sender: { name: "users/1", displayName: "Chat Name" } }] });
+    expect(batchLookups(requests)).toHaveLength(0);
   });
 
   it("does not look anything up for messages without a sender", async () => {

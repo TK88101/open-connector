@@ -18,7 +18,7 @@ export const provider: ProviderDefinition = {
   service,
   displayName: "Google Chat",
   description:
-    "Read Google Chat spaces and message history, and send plain-text messages, as the authenticated Google Workspace user.",
+    "Read Google Chat spaces and message history, name members and message senders through the Workspace directory, and send plain-text messages, as the authenticated Google Workspace user. Sending and naming require an OAuth user connection: service account connections only read spaces and messages.",
   categories: ["Communication", "Productivity"],
   authTypes: ["oauth2", "custom_credential"],
   auth: [

@@ -218,7 +218,7 @@ export async function attachSenderProfiles(
 
   return messages.map((message) => {
     const sender = optionalRecord(message.sender);
-    const profile = profiles.get(optionalString(sender?.name) ?? "");
+    const profile = needsSenderLookup(sender) ? profiles.get(optionalString(sender?.name) ?? "") : undefined;
     return profile ? { ...message, sender: { ...sender, ...profile } } : message;
   });
 }
@@ -226,7 +226,19 @@ export async function attachSenderProfiles(
 function humanSenderName(message: Record<string, unknown>): string[] {
   const sender = optionalRecord(message.sender);
   const name = optionalString(sender?.name);
-  return sender?.type === "HUMAN" && name?.startsWith("users/") ? [name] : [];
+  return needsSenderLookup(sender) && name ? [name] : [];
+}
+
+/**
+ * A human sender identified only by users/{id}. Chat fills in displayName itself
+ * under app authentication, and that name is kept rather than looked up again.
+ */
+function needsSenderLookup(sender: Record<string, unknown> | undefined): boolean {
+  return (
+    sender?.type === "HUMAN" &&
+    optionalString(sender.name)?.startsWith("users/") === true &&
+    optionalString(sender.displayName) === undefined
+  );
 }
 
 /**
