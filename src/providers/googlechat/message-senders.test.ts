@@ -153,18 +153,32 @@ describe("Google Chat message sender names", () => {
     );
   });
 
-  it("keeps a sender name Google Chat already supplied and does not look it up", async () => {
-    const { requests, fetcher } = fakeGoogle({
+  it("keeps a sender name Google Chat already supplied and fills in only the email", async () => {
+    const { fetcher } = fakeGoogle({
+      messages: [{ name: "spaces/A/messages/1", sender: { ...humanSender("1"), displayName: "Chat Name" } }],
+      directory: { "1": "Directory Name" },
+    });
+
+    const result = await googleChatActionHandlers.list_messages({ space: "A" }, { accessToken, fetcher });
+
+    // Chat fills in displayName itself under app authentication but never an email.
+    expect(result).toMatchObject({
+      messages: [{ sender: { name: "users/1", displayName: "Chat Name", email: "directory name@example.com" } }],
+    });
+  });
+
+  it("keeps a Chat-supplied sender name when the directory lookup fails", async () => {
+    const { fetcher } = fakeGoogle({
       messages: [{ name: "spaces/A/messages/1", sender: { ...humanSender("1"), displayName: "Chat Name" } }],
       batchStatus: 403,
     });
 
     const result = await googleChatActionHandlers.list_messages({ space: "A" }, { accessToken, fetcher });
 
-    // Chat fills in displayName itself under app authentication; a failed or
-    // redundant directory lookup must not overwrite it with null.
-    expect(result).toMatchObject({ messages: [{ sender: { name: "users/1", displayName: "Chat Name" } }] });
-    expect(batchLookups(requests)).toHaveLength(0);
+    const sender = (result as { messages: { sender: Record<string, unknown> }[] }).messages[0].sender;
+    expect(sender).toMatchObject({ name: "users/1", displayName: "Chat Name", email: null });
+    // profileUnavailableReason explains a null displayName; there is none here.
+    expect(sender).not.toHaveProperty("profileUnavailableReason");
   });
 
   it("does not look anything up for messages without a sender", async () => {

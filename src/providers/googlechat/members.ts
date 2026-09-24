@@ -218,27 +218,34 @@ export async function attachSenderProfiles(
 
   return messages.map((message) => {
     const sender = optionalRecord(message.sender);
-    const profile = needsSenderLookup(sender) ? profiles.get(optionalString(sender?.name) ?? "") : undefined;
-    return profile ? { ...message, sender: { ...sender, ...profile } } : message;
+    const profile = sender && isHumanUserSender(sender) ? profiles.get(optionalString(sender.name) ?? "") : undefined;
+    return sender && profile ? { ...message, sender: mergeSenderProfile(sender, profile) } : message;
   });
 }
 
 function humanSenderName(message: Record<string, unknown>): string[] {
   const sender = optionalRecord(message.sender);
   const name = optionalString(sender?.name);
-  return needsSenderLookup(sender) && name ? [name] : [];
+  return sender && isHumanUserSender(sender) && name ? [name] : [];
+}
+
+/** Chat never reports a sender's email, so every human users/{id} sender is looked up. */
+function isHumanUserSender(sender: Record<string, unknown>): boolean {
+  return sender.type === "HUMAN" && optionalString(sender.name)?.startsWith("users/") === true;
 }
 
 /**
- * A human sender identified only by users/{id}. Chat fills in displayName itself
- * under app authentication, and that name is kept rather than looked up again.
+ * Chat fills in displayName itself under app authentication. That name is kept,
+ * and the directory only adds the email, so a failed lookup never replaces a name
+ * with null. profileUnavailableReason explains a null displayName, so it is only
+ * carried over when the directory was the sole source of the name.
  */
-function needsSenderLookup(sender: Record<string, unknown> | undefined): boolean {
-  return (
-    sender?.type === "HUMAN" &&
-    optionalString(sender.name)?.startsWith("users/") === true &&
-    optionalString(sender.displayName) === undefined
-  );
+function mergeSenderProfile(sender: Record<string, unknown>, profile: MemberProfile): Record<string, unknown> {
+  const chatName = optionalString(sender.displayName);
+  if (chatName === undefined) {
+    return { ...sender, ...profile };
+  }
+  return { ...sender, displayName: chatName, email: optionalString(sender.email) ?? profile.email };
 }
 
 /**
