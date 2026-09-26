@@ -86,6 +86,18 @@ function liveCreateDiagram(args: Record<string, unknown>): CallToolResult {
   };
 }
 
+// For XML the hosted server puts its validation findings between the source echo and the editor link, laid out the
+// way draw.io's create_diagram builds them.
+function liveCreateDiagramWithFindings(errors: string[], warnings: string[]): ToolHandler {
+  const sections: string[] = [];
+  if (errors.length > 0) sections.push(`ERRORS (will cause rendering issues):\n- ${errors.join("\n- ")}`);
+  if (warnings.length > 0) sections.push(`WARNINGS (may cause issues):\n- ${warnings.join("\n- ")}`);
+  return (args) => {
+    const [echo, link] = liveCreateDiagram(args).content;
+    return { content: [echo!, { type: "text", text: sections.join("\n\n") }, link!] };
+  };
+}
+
 // The hosted server returns the matches as a JSON array inside one text block.
 function liveSearchShapes(): CallToolResult {
   return { content: [{ type: "text", text: JSON.stringify([lambdaShape]) }] };
@@ -235,24 +247,37 @@ describe("create_diagram", () => {
   });
 
   it("returns draw.io's findings for an XML diagram", async () => {
-    const host = createSyntheticDrawio({
-      createDiagram: (args) => {
-        const [echo, link] = liveCreateDiagram(args).content;
-        const findings =
-          "ERRORS (will cause rendering issues):\n- XML comments (<!-- -->) are forbidden — remove all comments\n\nWARNINGS (may cause issues):\n- Edge e1 references missing target cell 9";
-        return { content: [echo!, { type: "text", text: findings }, link!] };
-      },
-    });
+    const errors = ["XML comments (<!-- -->) are forbidden — remove all comments"];
+    const warnings = ['Edge id="e1" references target="9" which does not exist'];
+    const host = createSyntheticDrawio({ createDiagram: liveCreateDiagramWithFindings(errors, warnings) });
     const result = await execute("create_diagram", { xml: diagramXml });
-    expect(result).toEqual({
-      ok: true,
-      output: {
-        editorUrl,
-        errors: ["XML comments (<!-- -->) are forbidden — remove all comments"],
-        warnings: ["Edge e1 references missing target cell 9"],
-      },
-    });
+    expect(result).toEqual({ ok: true, output: { editorUrl, errors, warnings } });
     expect(host.calls).toEqual([{ name: "create_diagram", arguments: { xml: diagramXml } }]);
+  });
+
+  // draw.io quotes attribute values verbatim, so a finding can carry line breaks, blank lines, or a line that looks
+  // like a section heading or an editor link.
+  it.each<[string, string[], string[]]>([
+    ["a line break", ["Duplicate IDs: a\nb, a\nb"], []],
+    [
+      "a blank line",
+      [
+        'Missing root cell with id="0" — every diagram needs <mxCell id="0"/>',
+        "Duplicate IDs: x\n\ny",
+        'Missing default layer cell with id="1" parent="0" — every diagram needs <mxCell id="1" parent="0"/>',
+      ],
+      ['Edge id="e" references target="t" which does not exist'],
+    ],
+    [
+      "an errors heading",
+      [],
+      ['Cell id="c" references parent="p\n\nERRORS (will cause rendering issues):\nq" which does not exist'],
+    ],
+    ["a link", ["Duplicate IDs: a\nhttps://evil.example/#create=x, a"], []],
+  ])("keeps a finding that quotes %s intact", async (_label, errors, warnings) => {
+    createSyntheticDrawio({ createDiagram: liveCreateDiagramWithFindings(errors, warnings) });
+    const result = await execute("create_diagram", { xml: diagramXml });
+    expect(result).toEqual({ ok: true, output: { editorUrl, errors, warnings } });
   });
 
   it("does not return a link that draw.io's findings quote from the diagram source", async () => {

@@ -24,6 +24,13 @@ const hostedEndpoint = "https://mcp.draw.io/mcp";
 const defaultShapeLimit = 10;
 // The two create_diagram tool errors that judge the submitted source; anything else is a server failure.
 const sourceVerdictPrefixes = ["Could not extract draw.io XML", "Provide exactly one of"];
+const errorsHeading = "ERRORS (will cause rendering issues):\n- ";
+const warningsHeading = "WARNINGS (may cause issues):\n- ";
+
+interface DrawioFindings {
+  errors: string[];
+  warnings: string[];
+}
 
 interface DrawioShape {
   title: string;
@@ -45,7 +52,7 @@ export const drawioMcpActionHandlers: ProviderActionHandlers<"drawio_mcp", Provi
     if (editorUrl === undefined) {
       throw providerResponseError("draw.io MCP create_diagram response did not include an editor link");
     }
-    return { editorUrl, errors: readFindings(texts, "ERRORS"), warnings: readFindings(texts, "WARNINGS") };
+    return { editorUrl, ...readFindings(texts) };
   },
   async search_shapes(input, options) {
     const result = await callMcpTool({
@@ -154,13 +161,27 @@ function readTextContent(result: unknown): string[] {
   });
 }
 
-function readFindings(texts: string[], heading: string): string[] {
-  return texts
-    .filter(isFindingsText)
-    .flatMap((text) => text.split(/\n{2,}/u))
-    .filter((block) => block.startsWith(`${heading} `))
-    .flatMap((block) => block.split("\n").filter((line) => line.startsWith("- ")))
-    .map((line) => line.slice(2).trim());
+// Findings items quote attribute values verbatim, so blank lines and line starts can come from the source. Only
+// draw.io's exact layout splits the block: each heading is followed by the items joined with "\n- ", and a blank
+// line separates the errors section from the warnings section. A value that itself contains "\n- " still reads as
+// two items, since the layout leaves no way to tell them apart.
+function readFindings(texts: string[]): DrawioFindings {
+  const text = texts.find(isFindingsText) ?? "";
+  if (text.startsWith(warningsHeading)) {
+    return { errors: [], warnings: text.slice(warningsHeading.length).split("\n- ") };
+  }
+  if (!text.startsWith(errorsHeading)) {
+    return { errors: [], warnings: [] };
+  }
+  const body = text.slice(errorsHeading.length);
+  const separator = body.lastIndexOf(`\n\n${warningsHeading}`);
+  if (separator < 0) {
+    return { errors: body.split("\n- "), warnings: [] };
+  }
+  return {
+    errors: body.slice(0, separator).split("\n- "),
+    warnings: body.slice(separator + 2 + warningsHeading.length).split("\n- "),
+  };
 }
 
 // Newer draw.io servers return structured shapes; the hosted server returns a JSON array as text.

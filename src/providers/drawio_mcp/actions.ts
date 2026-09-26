@@ -27,10 +27,10 @@ const createDiagramOutputSchema = s.actionOutput(
       "A link that opens the diagram in the draw.io web editor. The diagram source is compressed into the URL fragment.",
     ),
     errors: s.stringArray(
-      "Problems draw.io expects to break rendering, such as XML comments. Fix them and create the diagram again. draw.io only checks XML; Mermaid is converted when the link is opened, so an empty list does not mean the Mermaid source is valid.",
+      "Problems draw.io expects to break rendering, such as XML comments. Fix them and create the diagram again. Items quote attribute values from the diagram source verbatim and may contain line breaks. draw.io only checks XML; Mermaid is converted when the link is opened, so an empty list does not mean the Mermaid source is valid.",
     ),
     warnings: s.stringArray(
-      "Problems draw.io expects may affect rendering of XML, such as edges that reference missing cells. Always empty for Mermaid.",
+      "Problems draw.io expects may affect rendering of XML, such as edges that reference missing cells. Items quote attribute values from the diagram source verbatim and may contain line breaks. Always empty for Mermaid.",
     ),
   },
   "The draw.io diagram.",
