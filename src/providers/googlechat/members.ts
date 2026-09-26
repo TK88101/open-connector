@@ -75,6 +75,8 @@ interface SpaceMembersPage {
 interface SpaceMembersPageRequest {
   pageSize: number;
   pageToken: string | undefined;
+  /** Also list members who were invited but have not joined yet. */
+  showInvited?: boolean;
 }
 
 /**
@@ -176,7 +178,10 @@ async function listAllMembers(spaceName: string, context: GoogleChatRuntimeConte
   let members: ChatMember[] = [];
   let pageToken: string | undefined;
   for (let page = 0; page < maxDirectMessageMemberPages; page += 1) {
-    const result = await fetchMemberPage(spaceName, { pageSize: 100, pageToken }, context);
+    // Chat leaves invited members out by default. A peer who has not joined the
+    // conversation yet is still the peer; without it the caller would be the only
+    // member left and the direct message would be misreported as SELF.
+    const result = await fetchMemberPage(spaceName, { pageSize: 100, pageToken, showInvited: true }, context);
     members = [...members, ...result.members];
     pageToken = result.nextPageToken;
     if (!pageToken) {
@@ -199,6 +204,7 @@ async function fetchMemberPage(
       query: compactObject({
         pageSize: String(request.pageSize),
         pageToken: request.pageToken,
+        showInvited: request.showInvited ? "true" : undefined,
       }),
     },
   );

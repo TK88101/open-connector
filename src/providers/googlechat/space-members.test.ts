@@ -18,6 +18,7 @@ const peerId = "222";
 interface Membership {
   member: { name: string; type: string; displayName?: string; email?: string };
   role?: string;
+  state?: string;
 }
 
 /** A directory entry, or a per-person failure carrying a google.rpc.Code. */
@@ -94,7 +95,10 @@ function fakeGoogle(options: FakeGoogleOptions = {}) {
       }
       const index = Number(url.searchParams.get("pageToken") ?? "0");
       const nextPageToken = index + 1 < pages.length ? String(index + 1) : undefined;
-      return json({ memberships: pages[index], nextPageToken });
+      // Like Google Chat, leave invited members out unless showInvited asks for them.
+      const showInvited = url.searchParams.get("showInvited") === "true";
+      const memberships = pages[index].filter((membership) => showInvited || membership.state !== "INVITED");
+      return json({ memberships, nextPageToken });
     }
     if (url.hostname === "people.googleapis.com" && url.pathname === "/v1/people/me") {
       return options.selfStatus ? googleError(options.selfStatus) : json({ resourceName: `people/${selfId}` });
@@ -216,6 +220,19 @@ describe("Google Chat get_direct_message_peer", () => {
       space: "spaces/D",
       peer: { kind: "HUMAN", user: `users/${peerId}`, displayName: "Chat Peer", email: null },
     });
+  });
+
+  it("counts a peer who was invited but has not joined instead of reporting the direct message as SELF", async () => {
+    const { requests, fetcher } = fakeGoogle({
+      memberPages: [[human(selfId), { ...human(peerId), state: "INVITED" }]],
+      people: { [peerId]: person(["Peer"]) },
+    });
+
+    const result = await googleChatActionHandlers.get_direct_message_peer({ space: "D" }, { accessToken, fetcher });
+
+    expect(result).toMatchObject({ peer: { kind: "HUMAN", user: `users/${peerId}`, displayName: "Peer" } });
+    const memberRequests = requests.filter((url) => url.pathname === "/v1/spaces/D/members");
+    expect(memberRequests.map((url) => url.searchParams.get("showInvited"))).toEqual(["true"]);
   });
 
   it("classifies a direct message with an app as a bot peer without a People lookup", async () => {
@@ -460,6 +477,21 @@ describe("Google Chat list_space_members", () => {
     // profileUnavailableReason explains a null displayName; there is none for the named member.
     expect(self.profileUnavailableReason).toBeUndefined();
     expect(peer).toMatchObject({ displayName: null, email: null, profileUnavailableReason: "people_forbidden" });
+  });
+
+  it("leaves invited members out, as Google Chat does by default", async () => {
+    const { requests, fetcher } = fakeGoogle({
+      memberPages: [[human(selfId), { ...human(peerId), state: "INVITED" }]],
+      people: { [selfId]: person(["Self"]) },
+    });
+
+    const result = await googleChatActionHandlers.list_space_members({ space: "D" }, { accessToken, fetcher });
+
+    expect(result).toMatchObject({ members: [{ user: `users/${selfId}` }] });
+    expect((result as { members: unknown[] }).members).toHaveLength(1);
+    expect(requests.find((url) => url.pathname === "/v1/spaces/D/members")?.searchParams.has("showInvited")).toBe(
+      false,
+    );
   });
 
   it("works for any space type without fetching the space", async () => {
