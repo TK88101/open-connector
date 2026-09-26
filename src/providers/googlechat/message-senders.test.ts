@@ -9,6 +9,7 @@ interface FakeSender {
   name: string;
   type: string;
   displayName?: string;
+  email?: string;
 }
 
 interface FakeOptions {
@@ -178,7 +179,48 @@ describe("Google Chat message sender names", () => {
     const sender = (result as { messages: { sender: Record<string, unknown> }[] }).messages[0].sender;
     expect(sender).toMatchObject({ name: "users/1", displayName: "Chat Name", email: null });
     // profileUnavailableReason explains a null displayName; there is none here.
-    expect(sender).not.toHaveProperty("profileUnavailableReason");
+    expect(sender.profileUnavailableReason).toBeUndefined();
+  });
+
+  it("skips the directory lookup for a sender Google Chat already reports with a name and email", async () => {
+    const { requests, fetcher } = fakeGoogle({
+      messages: [
+        {
+          name: "spaces/A/messages/1",
+          sender: { ...humanSender("1"), displayName: "Chat Name", email: "chat@example.com" },
+        },
+      ],
+      directory: { "1": "Directory Name" },
+    });
+
+    const result = await googleChatActionHandlers.list_messages({ space: "A" }, { accessToken, fetcher });
+
+    expect(result).toMatchObject({
+      messages: [{ sender: { name: "users/1", displayName: "Chat Name", email: "chat@example.com" } }],
+    });
+    expect(batchLookups(requests)).toHaveLength(0);
+  });
+
+  it("keeps a Chat-supplied sender email when the directory cannot name the sender", async () => {
+    const { fetcher } = fakeGoogle({
+      messages: [{ name: "spaces/A/messages/1", sender: { ...humanSender("1"), email: "chat@example.com" } }],
+      batchStatus: 403,
+    });
+
+    const result = await googleChatActionHandlers.list_messages({ space: "A" }, { accessToken, fetcher });
+
+    expect(result).toMatchObject({
+      messages: [
+        {
+          sender: {
+            name: "users/1",
+            displayName: null,
+            email: "chat@example.com",
+            profileUnavailableReason: "people_forbidden",
+          },
+        },
+      ],
+    });
   });
 
   it("does not look anything up for messages without a sender", async () => {

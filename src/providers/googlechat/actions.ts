@@ -43,7 +43,7 @@ const spaceProperties = {
 const space = s.object("A normalized Google Chat space.", spaceProperties, { required: ["name", "spaceId"] });
 
 const directMessagePeer = s.object(
-  "The other participant of a direct message, named through the Workspace directory.",
+  "The other participant of a direct message, named by Google Chat or, where Chat leaves the name out, through the Workspace directory.",
   {
     kind: s.stringEnum(
       "HUMAN for another person, BOT for a Chat app, SELF for a direct message with only yourself, AMBIGUOUS when the members do not single out one peer.",
@@ -51,9 +51,11 @@ const directMessagePeer = s.object(
     ),
     user: s.nullableString("The peer's resource name, in the form users/{user}. Null when the peer is AMBIGUOUS."),
     displayName: s.nullableString(
-      "The peer's name from the Workspace directory. Null for BOT, SELF, AMBIGUOUS, or when the directory does not reveal it; profileUnavailableReason then says why.",
+      "The peer's name as Google Chat reports it, or from the Workspace directory when Chat leaves it out. Null for BOT, SELF, AMBIGUOUS, or when neither reveals it; profileUnavailableReason then says why.",
     ),
-    email: s.nullableString("The peer's primary email address from the Workspace directory, when visible."),
+    email: s.nullableString(
+      "The peer's email address as Google Chat reports it, or the primary one from the Workspace directory, when visible.",
+    ),
     profileUnavailableReason: s.stringEnum(
       "Why displayName is null for a HUMAN peer: profile_name_missing when the directory returned no name (profile sharing may be off), people_forbidden or people_not_found for a 403 or 404 from the People API, people_request_failed for any other failure.",
       ["profile_name_missing", "people_forbidden", "people_not_found", "people_request_failed"],
@@ -64,16 +66,18 @@ const directMessagePeer = s.object(
 );
 
 const spaceMember = s.object(
-  "A member of a Google Chat space, named through the Workspace directory.",
+  "A member of a Google Chat space, named by Google Chat or, where Chat leaves the name out, through the Workspace directory.",
   {
     user: s.string("The member's resource name, in the form users/{user}."),
     kind: s.string("HUMAN for a person, BOT for a Chat app."),
     role: s.string("The member's role in the space, such as ROLE_MEMBER or ROLE_MANAGER."),
     isSelf: s.boolean("Whether this member is the authenticated user."),
     displayName: s.nullableString(
-      "The member's name from the Workspace directory. Null for bots, or when the directory does not reveal it; profileUnavailableReason then says why.",
+      "The member's name as Google Chat reports it, or for a human member from the Workspace directory when Chat leaves it out. Null when neither reveals it; for a human member profileUnavailableReason then says why. Bots are never looked up in the directory.",
     ),
-    email: s.nullableString("The member's primary email address from the Workspace directory, when visible."),
+    email: s.nullableString(
+      "The member's email address as Google Chat reports it, or for a human member the primary one from the Workspace directory, when visible.",
+    ),
     profileUnavailableReason: s.stringEnum(
       "Why displayName is null for a human member: profile_name_missing when the directory returned no name (profile sharing may be off), people_forbidden or people_not_found when the People API refused or could not find the profile, people_request_failed for any other failure.",
       ["profile_name_missing", "people_forbidden", "people_not_found", "people_request_failed"],
@@ -85,9 +89,11 @@ const spaceMember = s.object(
 const messageSender = s.object("The user who created the message.", {
   name: s.string("The resource name of the sender, in the form users/{user}."),
   displayName: s.nullableString(
-    "The sender's name. Google Chat omits it under user authentication, so for human senders it is filled in from the Workspace directory; null when the directory does not reveal it, with profileUnavailableReason saying why. Not set for bots.",
+    "The sender's name. Under user authentication Google Chat only reports it for members of the space and users with prior affinity, so a human sender's missing name is filled in from the Workspace directory; null when neither reveals it, with profileUnavailableReason saying why. Bots are never looked up in the directory.",
   ),
-  email: s.nullableString("The human sender's primary email address from the Workspace directory, when visible."),
+  email: s.nullableString(
+    "The human sender's email address as Google Chat reports it, or the primary one from the Workspace directory, when visible.",
+  ),
   profileUnavailableReason: s.stringEnum(
     "Why displayName is null for a human sender: profile_name_missing, people_forbidden, people_not_found, or people_request_failed. Names need the directory.readonly scope and the People API.",
     ["profile_name_missing", "people_forbidden", "people_not_found", "people_request_failed"],
@@ -153,7 +159,7 @@ const actions: GoogleChatActionSource[] = [
   action(
     "find_direct_message",
     "read",
-    "Find the existing direct message space between the authenticated user and one other user, identified by email address or numeric user id. Use this to address a person by identity instead of by an opaque space id: under user authentication a direct message space has no displayName and its membership reports only users/{id}, so list_spaces can never tell you who a DM is with. Only finds conversations that already exist; it never creates one. Caution when the result is fed to create_message: if the identifier is mistyped but still resolves to another real user this account already has a DM with, this action succeeds and returns that person's space, and the returned space id is opaque, so it cannot be eyeballed to confirm the recipient. The result therefore carries peer, the person the space actually belongs to, named through the Workspace directory: read it back to the user and confirm the name before sending. Nothing enforces that check. Naming the peer needs the chat.memberships.readonly and directory.readonly scopes plus the People API on top of the scope below. When the peer cannot be named, peer is null and peerError says why, while the space itself is still returned.",
+    "Find the existing direct message space between the authenticated user and one other user, identified by email address or numeric user id. Use this to address a person by identity instead of by an opaque space id: a direct message space has no displayName, so list_spaces can never tell you who a DM is with. Only finds conversations that already exist; it never creates one. Caution when the result is fed to create_message: if the identifier is mistyped but still resolves to another real user this account already has a DM with, this action succeeds and returns that person's space, and the returned space id is opaque, so it cannot be eyeballed to confirm the recipient. The result therefore carries peer, the person the space actually belongs to, named by Google Chat or the Workspace directory: read it back to the user and confirm the name before sending. Nothing enforces that check. Naming the peer needs the chat.memberships.readonly and directory.readonly scopes plus the People API on top of the scope below. When the peer cannot be named, peer is null and peerError says why, while the space itself is still returned.",
     [googleChatSpacesReadonlyScope],
     s.actionInput(
       {
@@ -179,7 +185,7 @@ const actions: GoogleChatActionSource[] = [
   action(
     "get_direct_message_peer",
     "read",
-    "Name the other participant of a direct message space. Under user authentication Google Chat reports a member only as users/{id}, so this looks the id up in the Workspace directory through the People API. Use it to tell who a direct message from list_spaces is with. Rejects spaces that are not direct messages. A peer that cannot be named still comes back with its users/{id} and a profileUnavailableReason.",
+    "Name the other participant of a direct message space. Under user authentication Google Chat may report a member only as users/{id}, so a name or email Chat leaves out is looked up in the Workspace directory through the People API. Use it to tell who a direct message from list_spaces is with. Rejects spaces that are not direct messages. A peer that cannot be named still comes back with its users/{id} and a profileUnavailableReason.",
     [googleChatSpacesReadonlyScope, googleChatMembershipsReadonlyScope, googleDirectoryReadonlyScope],
     s.actionInput(
       {
@@ -199,7 +205,7 @@ const actions: GoogleChatActionSource[] = [
   action(
     "list_space_members",
     "read",
-    "List the members of any Google Chat space, including group spaces, with each person's name and email from the Workspace directory. Under user authentication Google Chat reports members only as users/{id}, so every human on a page is looked up through the People API in one batch. Returns one page at a time; pass nextPageToken back as pageToken for the next page. Members whose profile cannot be read keep their users/{id} with a null displayName and a profileUnavailableReason.",
+    "List the members of any Google Chat space, including group spaces, with each person's name and email. Under user authentication Google Chat may report a member only as users/{id}, so every human on a page whose name or email Chat leaves out is looked up in the Workspace directory through the People API in one batch. Returns one page at a time; pass nextPageToken back as pageToken for the next page. Members whose profile cannot be read keep their users/{id} with a null displayName and a profileUnavailableReason.",
     [googleChatMembershipsReadonlyScope, googleDirectoryReadonlyScope],
     s.actionInput(
       {
@@ -227,7 +233,7 @@ const actions: GoogleChatActionSource[] = [
   action(
     "list_messages",
     "read",
-    "List the message history of a Google Chat space, with optional filtering, ordering, and pagination. Human senders are named from the Workspace directory, which needs the directory.readonly scope and the People API on top of the scope below; without them each keeps its users/{id} with a null displayName and a profileUnavailableReason, and the messages are still returned.",
+    "List the message history of a Google Chat space, with optional filtering, ordering, and pagination. A name or email Google Chat leaves out for a human sender is filled in from the Workspace directory, which needs the directory.readonly scope and the People API on top of the scope below; without them such a sender keeps its users/{id} with a null displayName and a profileUnavailableReason, and the messages are still returned.",
     [googleChatMessagesReadonlyScope],
     s.actionInput(
       {
@@ -252,7 +258,7 @@ const actions: GoogleChatActionSource[] = [
   action(
     "get_message",
     "read",
-    "Retrieve a single Google Chat message by its resource name, or by space and message ID. Human senders are named from the Workspace directory, which needs the directory.readonly scope and the People API on top of the scope below; without them each keeps its users/{id} with a null displayName and a profileUnavailableReason, and the messages are still returned.",
+    "Retrieve a single Google Chat message by its resource name, or by space and message ID. A name or email Google Chat leaves out for a human sender is filled in from the Workspace directory, which needs the directory.readonly scope and the People API on top of the scope below; without them the sender keeps its users/{id} with a null displayName and a profileUnavailableReason, and the message is still returned.",
     [googleChatMessagesReadonlyScope],
     s.actionInput(
       {

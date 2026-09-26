@@ -16,7 +16,7 @@ const selfId = "111";
 const peerId = "222";
 
 interface Membership {
-  member: { name: string; type: string };
+  member: { name: string; type: string; displayName?: string; email?: string };
   role?: string;
 }
 
@@ -42,6 +42,11 @@ function googleError(status: number): Response {
 
 function human(id: string, role = "ROLE_MEMBER"): Membership {
   return { member: { name: `users/${id}`, type: "HUMAN" }, role };
+}
+
+/** A human membership for which Google Chat itself reports a name and, optionally, an email. */
+function namedHuman(id: string, displayName: string, email?: string): Membership {
+  return { member: { name: `users/${id}`, type: "HUMAN", displayName, email }, role: "ROLE_MEMBER" };
 }
 
 function bot(id: string): Membership {
@@ -182,6 +187,35 @@ describe("Google Chat get_direct_message_peer", () => {
     const result = await googleChatActionHandlers.get_direct_message_peer({ space: "D" }, { accessToken, fetcher });
 
     expect(result).toMatchObject({ peer: { kind: "HUMAN", user: `users/${peerId}`, displayName: "Peer" } });
+  });
+
+  it("uses the name and email Google Chat reports for the peer without a directory lookup", async () => {
+    const { requests, fetcher } = fakeGoogle({
+      memberPages: [[human(selfId), namedHuman(peerId, "Chat Peer", "peer@example.com")]],
+    });
+
+    const result = await googleChatActionHandlers.get_direct_message_peer({ space: "D" }, { accessToken, fetcher });
+
+    expect(result).toEqual({
+      space: "spaces/D",
+      peer: { kind: "HUMAN", user: `users/${peerId}`, displayName: "Chat Peer", email: "peer@example.com" },
+    });
+    expect(batchLookups(requests)).toHaveLength(0);
+  });
+
+  it("keeps the peer name Google Chat reports when the directory lookup for its email fails", async () => {
+    const { fetcher } = fakeGoogle({
+      memberPages: [[human(selfId), namedHuman(peerId, "Chat Peer")]],
+      batchStatus: 403,
+    });
+
+    const result = await googleChatActionHandlers.get_direct_message_peer({ space: "D" }, { accessToken, fetcher });
+
+    // profileUnavailableReason explains a null displayName; there is none here.
+    expect(result).toEqual({
+      space: "spaces/D",
+      peer: { kind: "HUMAN", user: `users/${peerId}`, displayName: "Chat Peer", email: null },
+    });
   });
 
   it("classifies a direct message with an app as a bot peer without a People lookup", async () => {
@@ -380,6 +414,52 @@ describe("Google Chat list_space_members", () => {
       `people/${peerId}`,
       "people/333",
     ]);
+  });
+
+  it("keeps what Google Chat reports and looks up only the humans it left without a name or email", async () => {
+    const { requests, fetcher } = fakeGoogle({
+      memberPages: [
+        [
+          namedHuman(selfId, "Chat Self", "self@example.com"),
+          namedHuman(peerId, "Chat Peer"),
+          human("333"),
+          { member: { name: "users/B1", type: "BOT", displayName: "Helper Bot" }, role: "ROLE_MEMBER" },
+        ],
+      ],
+      people: {
+        [peerId]: person(["Directory Peer"], ["peer@example.com"]),
+        "333": person(["佐藤太郎"], ["taro@example.com"]),
+      },
+    });
+
+    const result = await googleChatActionHandlers.list_space_members({ space: "D" }, { accessToken, fetcher });
+
+    expect(result).toMatchObject({
+      members: [
+        { user: `users/${selfId}`, isSelf: true, displayName: "Chat Self", email: "self@example.com" },
+        { user: `users/${peerId}`, displayName: "Chat Peer", email: "peer@example.com" },
+        { user: "users/333", displayName: "佐藤太郎", email: "taro@example.com" },
+        { user: "users/B1", kind: "BOT", displayName: "Helper Bot", email: null },
+      ],
+    });
+    const lookups = batchLookups(requests);
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0].searchParams.getAll("resourceNames")).toEqual([`people/${peerId}`, "people/333"]);
+  });
+
+  it("keeps the member names Google Chat reports when the directory lookup fails", async () => {
+    const { fetcher } = fakeGoogle({
+      memberPages: [[namedHuman(selfId, "Chat Self"), human(peerId)]],
+      batchStatus: 403,
+    });
+
+    const result = await googleChatActionHandlers.list_space_members({ space: "D" }, { accessToken, fetcher });
+    const [self, peer] = (result as { members: Record<string, unknown>[] }).members;
+
+    expect(self).toMatchObject({ displayName: "Chat Self", email: null });
+    // profileUnavailableReason explains a null displayName; there is none for the named member.
+    expect(self.profileUnavailableReason).toBeUndefined();
+    expect(peer).toMatchObject({ displayName: null, email: null, profileUnavailableReason: "people_forbidden" });
   });
 
   it("works for any space type without fetching the space", async () => {

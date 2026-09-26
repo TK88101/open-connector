@@ -11,9 +11,9 @@ export const googleChatMessagesCreateScope = "https://www.googleapis.com/auth/ch
 /** Lists the members of a space, which is the only way to learn a direct message's other participant. */
 export const googleChatMembershipsReadonlyScope = "https://www.googleapis.com/auth/chat.memberships.readonly";
 /**
- * Reads Workspace directory profiles through the People API. Chat reports members
- * as `users/{id}` with no name under user authentication, and this is the narrowest
- * scope that turns that id into a name. It exposes the organization directory, not
+ * Reads Workspace directory profiles through the People API. Under user
+ * authentication Chat can report a member as just `users/{id}` with no name, and
+ * this is the narrowest scope that turns that id into a name. It exposes the organization directory, not
  * just the peer, and Workspace admins can restrict it or disable profile sharing.
  */
 export const googleDirectoryReadonlyScope = "https://www.googleapis.com/auth/directory.readonly";

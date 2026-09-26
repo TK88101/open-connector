@@ -19,8 +19,18 @@ interface ListMembershipsPayload {
   nextPageToken?: string | null;
 }
 
-interface ChatMember {
+/**
+ * A users/{id} user with the name and email Google Chat itself reported. Under
+ * user authentication Chat only fills those in for members of the space and users
+ * with prior affinity to the caller, so either may be missing.
+ */
+interface ChatUser {
   name: string;
+  displayName: string | undefined;
+  email: string | undefined;
+}
+
+interface ChatMember extends ChatUser {
   type: string | undefined;
   role: string | undefined;
 }
@@ -77,21 +87,26 @@ export async function resolveDirectMessagePeer(
   context: GoogleChatRuntimeContext,
 ): Promise<DirectMessagePeer> {
   const [selfUser, members] = await Promise.all([readSelfUserName(context), listAllMembers(spaceName, context)]);
-  const humans = members.filter((member) => member.type === "HUMAN").map((member) => member.name);
+  const humans = members.filter((member) => member.type === "HUMAN");
   const bots = members.filter((member) => member.type === "BOT").map((member) => member.name);
-  const others = humans.filter((name) => name !== selfUser);
+  const others = humans.filter((member) => member.name !== selfUser);
 
   if (others.length === 1) {
-    const profiles = await lookupProfiles(others, context);
-    return { kind: "HUMAN", user: others[0], ...profiles.get(others[0])! };
+    const [peer] = others;
+    const profiles = await lookupProfiles(missingChatProfiles(others), context);
+    return { kind: "HUMAN", user: peer.name, ...mergeProfile(peer, profiles.get(peer.name)) };
   }
   if (others.length > 1) {
-    return unresolvedPeer("AMBIGUOUS", null, others);
+    return unresolvedPeer(
+      "AMBIGUOUS",
+      null,
+      others.map((member) => member.name),
+    );
   }
   if (bots.length === 1) {
     return unresolvedPeer("BOT", bots[0]);
   }
-  if (bots.length === 0 && humans.includes(selfUser)) {
+  if (bots.length === 0 && humans.some((member) => member.name === selfUser)) {
     return unresolvedPeer("SELF", selfUser);
   }
 
@@ -99,34 +114,27 @@ export async function resolveDirectMessagePeer(
 }
 
 /**
- * One page of a space's members, each human named through a single batched
- * directory lookup. The page size is capped so one lookup always covers the page.
+ * One page of a space's members. Every human Google Chat left without a name or
+ * email is looked up in a single batched directory call; the page size is capped
+ * so one call always covers the page.
  */
 export async function listSpaceMembersPage(
   spaceName: string,
   request: SpaceMembersPageRequest,
   context: GoogleChatRuntimeContext,
 ): Promise<SpaceMembersPage> {
-  const [selfUser, page] = await Promise.all([
-    readSelfUserName(context),
-    fetchMemberPage(spaceName, { pageSize: String(request.pageSize), pageToken: request.pageToken }, context),
-  ]);
-  const humans = page.members.filter((member) => member.type === "HUMAN").map((member) => member.name);
-  const profiles = await lookupProfiles(humans, context);
+  const [selfUser, page] = await Promise.all([readSelfUserName(context), fetchMemberPage(spaceName, request, context)]);
+  const humans = page.members.filter((member) => member.type === "HUMAN");
+  const profiles = await lookupProfiles(missingChatProfiles(humans), context);
 
   return {
-    members: page.members.map((member) => {
-      const profile = profiles.get(member.name);
-      return {
-        user: member.name,
-        kind: member.type,
-        role: member.role,
-        isSelf: member.name === selfUser,
-        displayName: profile?.displayName ?? null,
-        email: profile?.email ?? null,
-        profileUnavailableReason: profile?.profileUnavailableReason,
-      };
-    }),
+    members: page.members.map((member) => ({
+      user: member.name,
+      kind: member.type,
+      role: member.role,
+      isSelf: member.name === selfUser,
+      ...mergeProfile(member, profiles.get(member.name)),
+    })),
     nextPageToken: page.nextPageToken ?? null,
   };
 }
@@ -168,7 +176,7 @@ async function listAllMembers(spaceName: string, context: GoogleChatRuntimeConte
   let members: ChatMember[] = [];
   let pageToken: string | undefined;
   for (let page = 0; page < maxDirectMessageMemberPages; page += 1) {
-    const result = await fetchMemberPage(spaceName, { pageSize: "100", pageToken }, context);
+    const result = await fetchMemberPage(spaceName, { pageSize: 100, pageToken }, context);
     members = [...members, ...result.members];
     pageToken = result.nextPageToken;
     if (!pageToken) {
@@ -181,12 +189,18 @@ async function listAllMembers(spaceName: string, context: GoogleChatRuntimeConte
 
 async function fetchMemberPage(
   spaceName: string,
-  query: { pageSize: string; pageToken: string | undefined },
+  request: SpaceMembersPageRequest,
   context: GoogleChatRuntimeContext,
 ): Promise<ChatMemberPage> {
   const payload = await googleChatJsonRequest<ListMembershipsPayload>(
     `${googleChatApiBaseUrl}/${encodeResourceName(spaceName)}/members`,
-    { context, query: compactObject(query) },
+    {
+      context,
+      query: compactObject({
+        pageSize: String(request.pageSize),
+        pageToken: request.pageToken,
+      }),
+    },
   );
 
   return {
@@ -199,53 +213,73 @@ function toChatMember(value: unknown): ChatMember[] {
   const membership = recordOrEmpty(value);
   const member = recordOrEmpty(membership.member);
   const name = optionalString(member.name);
-  return name ? [{ name, type: optionalString(member.type), role: optionalString(membership.role) }] : [];
+  return name
+    ? [
+        {
+          name,
+          type: optionalString(member.type),
+          role: optionalString(membership.role),
+          displayName: optionalString(member.displayName),
+          email: optionalString(member.email),
+        },
+      ]
+    : [];
 }
 
 /**
- * Fill in each human sender's directory name and email on normalized messages.
- * Chat reports a sender only as users/{id} under user authentication. Distinct
- * senders are looked up together, so a page costs one extra request per 200
- * senders. A failed lookup leaves the message intact with a null name and a
- * reason; bots and messages without a sender are left as they are.
+ * Fill in each human sender's name and email on normalized messages. Under user
+ * authentication Chat reports them itself only for members of the space and users
+ * with prior affinity to the caller, so every human sender missing either is
+ * looked up in the directory. Distinct senders are looked up together, so a page
+ * costs one extra request per 200 senders. A failed lookup leaves the message
+ * intact with a null name and a reason; bots and messages without a sender are
+ * left as they are.
  */
 export async function attachSenderProfiles(
   messages: Record<string, unknown>[],
   context: GoogleChatRuntimeContext,
 ): Promise<Record<string, unknown>[]> {
-  const senders = [...new Set(messages.flatMap((message) => humanSenderName(message)))];
-  const profiles = await lookupProfiles(senders, context);
+  const profiles = await lookupProfiles(
+    missingChatProfiles(messages.flatMap((message) => humanSender(message))),
+    context,
+  );
 
   return messages.map((message) => {
-    const sender = optionalRecord(message.sender);
-    const profile = sender && isHumanUserSender(sender) ? profiles.get(optionalString(sender.name) ?? "") : undefined;
-    return sender && profile ? { ...message, sender: mergeSenderProfile(sender, profile) } : message;
+    const [sender] = humanSender(message);
+    return sender
+      ? { ...message, sender: { ...recordOrEmpty(message.sender), ...mergeProfile(sender, profiles.get(sender.name)) } }
+      : message;
   });
 }
 
-function humanSenderName(message: Record<string, unknown>): string[] {
+/** The human users/{id} sender of a normalized message, if it has one. */
+function humanSender(message: Record<string, unknown>): ChatUser[] {
   const sender = optionalRecord(message.sender);
   const name = optionalString(sender?.name);
-  return sender && isHumanUserSender(sender) && name ? [name] : [];
+  return sender?.type === "HUMAN" && name?.startsWith("users/")
+    ? [{ name, displayName: optionalString(sender.displayName), email: optionalString(sender.email) }]
+    : [];
 }
 
-/** Chat never reports a sender's email, so every human users/{id} sender is looked up. */
-function isHumanUserSender(sender: Record<string, unknown>): boolean {
-  return sender.type === "HUMAN" && optionalString(sender.name)?.startsWith("users/") === true;
+/** The distinct users whose name or email Chat left out, which only the directory can fill in. */
+function missingChatProfiles(users: ChatUser[]): string[] {
+  const missing = users.filter((user) => user.displayName === undefined || user.email === undefined);
+  return [...new Set(missing.map((user) => user.name))];
 }
 
 /**
- * Chat fills in displayName itself under app authentication. That name is kept,
- * and the directory only adds the email, so a failed lookup never replaces a name
- * with null. profileUnavailableReason explains a null displayName, so it is only
- * carried over when the directory was the sole source of the name.
+ * Combine what Chat reported with the directory profile. Chat's own name and email
+ * win and the directory only fills in what Chat left out, so a failed lookup never
+ * replaces a known value with null. profileUnavailableReason explains a null
+ * displayName, so it is only kept while the name is still missing.
  */
-function mergeSenderProfile(sender: Record<string, unknown>, profile: MemberProfile): Record<string, unknown> {
-  const chatName = optionalString(sender.displayName);
-  if (chatName === undefined) {
-    return { ...sender, ...profile };
-  }
-  return { ...sender, displayName: chatName, email: optionalString(sender.email) ?? profile.email };
+function mergeProfile(chat: ChatUser, directory: MemberProfile | undefined): MemberProfile {
+  const displayName = chat.displayName ?? directory?.displayName ?? null;
+  return {
+    displayName,
+    email: chat.email ?? directory?.email ?? null,
+    profileUnavailableReason: displayName === null ? directory?.profileUnavailableReason : undefined,
+  };
 }
 
 /**

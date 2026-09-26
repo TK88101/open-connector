@@ -138,11 +138,11 @@ async function getSpace(input: Record<string, unknown>, context: GoogleChatRunti
 /**
  * Locate the existing direct message space between the authenticated user and
  * another user. This is the only way to address a person by identity rather than
- * by an opaque space id: under user authentication a DIRECT_MESSAGE space carries
- * no displayName, and Membership only reports `users/{id}` with no name attached,
- * so `list_spaces` alone can never tell you who a DM is with.
+ * by an opaque space id: a DIRECT_MESSAGE space carries no displayName, so
+ * `list_spaces` alone can never tell you who a DM is with.
  *
- * Needs nothing beyond chat.spaces.readonly, which the read actions already use.
+ * Finding the space needs nothing beyond chat.spaces.readonly, which the read
+ * actions already use. Naming its peer needs more, so that part is best effort.
  */
 async function findDirectMessage(input: Record<string, unknown>, context: GoogleChatRuntimeContext) {
   const name = resolveUserName(input.user);
@@ -200,9 +200,10 @@ async function findDirectMessage(input: Record<string, unknown>, context: Google
 }
 
 /**
- * Name the other participant of a direct message space. Chat alone cannot: under
- * user authentication a member is only `users/{id}`, so the id is looked up in the
- * Workspace directory through the People API, where the same id names the person.
+ * Name the other participant of a direct message space. Under user authentication
+ * Chat may report a member only as `users/{id}`, so whatever it leaves out is
+ * looked up in the Workspace directory through the People API, where the same id
+ * names the person.
  */
 async function getDirectMessagePeer(input: Record<string, unknown>, context: GoogleChatRuntimeContext) {
   const spaceName = resolveSpaceName(input.space, "space is required");
@@ -387,6 +388,7 @@ function normalizeMessage(value: unknown): Record<string, unknown> {
       ? compactObject({
           name: optionalString(sender.name),
           displayName: optionalString(sender.displayName),
+          email: optionalString(sender.email),
           type: optionalString(sender.type),
           domainId: optionalString(sender.domainId),
           isAnonymous: optionalBoolean(sender.isAnonymous),
