@@ -182,7 +182,9 @@ const actions: GoogleChatActionSource[] = [
         ...spaceProperties,
         peer: s.nullable(directMessagePeer),
         peerError: s.object("Why peer is null. Absent when the peer was resolved.", {
-          status: s.integer("The HTTP status of the failed lookup."),
+          status: s.integer(
+            "The HTTP status of the failed lookup, or 502 when it failed without one, such as a network error.",
+          ),
           message: s.string("What went wrong."),
         }),
       },

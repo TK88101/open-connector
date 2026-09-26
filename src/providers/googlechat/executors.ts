@@ -17,7 +17,12 @@ import {
 } from "../googledrive/runtime-auth.ts";
 import { googleJsonRequest } from "../googledrive/runtime-request.ts";
 import { asObject } from "../googledrive/runtime-shared.ts";
-import { defineProviderProxy, ProviderRequestError, requiredResponseRecord } from "../provider-runtime.ts";
+import {
+  defineProviderProxy,
+  ProviderRequestError,
+  providerResponseError,
+  requiredResponseRecord,
+} from "../provider-runtime.ts";
 import {
   attachSenderProfiles,
   listSpaceMembersPage,
@@ -190,11 +195,19 @@ async function findDirectMessage(input: Record<string, unknown>, context: Google
     return { ...space, peer: await resolveDirectMessagePeer(spaceName, context) };
   } catch (error) {
     // The space was found; failing to name its other member must not hide that.
-    // Report why instead, so the caller knows the recipient is unconfirmed.
-    if (!(error instanceof ProviderRequestError)) {
+    // Report why instead, so the caller knows the recipient is unconfirmed. Only a
+    // cancelled request stops the action; a failure that is not an HTTP error, such
+    // as a network error or a members page that is not JSON, is reported as a 502.
+    if (context.signal?.aborted) {
       throw error;
     }
-    return { ...space, peer: null, peerError: { status: error.status, message: error.message } };
+    const failure =
+      error instanceof ProviderRequestError
+        ? error
+        : providerResponseError(
+            `could not resolve the direct message peer: ${error instanceof Error ? error.message : String(error)}`,
+          );
+    return { ...space, peer: null, peerError: { status: failure.status, message: failure.message } };
   }
 }
 

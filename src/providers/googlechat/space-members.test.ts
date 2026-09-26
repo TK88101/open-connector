@@ -458,6 +458,56 @@ describe("Google Chat find_direct_message peer", () => {
       peerError: { status: 502, message: expect.stringContaining("could not read the authenticated user's own id") },
     });
   });
+
+  it.each([
+    {
+      failure: "a network error",
+      answer: (): Promise<Response> => Promise.reject(new TypeError("fetch failed")),
+      detail: "fetch failed",
+    },
+    {
+      failure: "something other than JSON",
+      answer: (): Promise<Response> => Promise.resolve(new Response("<html>oops</html>", { status: 200 })),
+      detail: "not valid JSON",
+    },
+  ])("still returns the space when listing its members fails with $failure", async ({ answer, detail }) => {
+    const base = fakeGoogle();
+    const fetcher: ProviderFetch = async (input, init) =>
+      new URL(String(input)).pathname === "/v1/spaces/D/members" ? answer() : base.fetcher(input, init);
+
+    const result = await googleChatActionHandlers.find_direct_message(
+      { user: "peer@example.com" },
+      { accessToken, fetcher },
+    );
+
+    expect(result).toMatchObject({
+      name: "spaces/D",
+      peer: null,
+      peerError: {
+        status: 502,
+        message: expect.stringMatching(new RegExp(`could not resolve the direct message peer: .*${detail}`)),
+      },
+    });
+  });
+
+  it("stops instead of reporting a peerError when the caller cancels the request", async () => {
+    const controller = new AbortController();
+    const base = fakeGoogle();
+    const fetcher: ProviderFetch = async (input, init) => {
+      if (new URL(String(input)).pathname === "/v1/spaces/D/members") {
+        controller.abort();
+        throw new DOMException("This operation was aborted", "AbortError");
+      }
+      return base.fetcher(input, init);
+    };
+
+    await expect(
+      googleChatActionHandlers.find_direct_message(
+        { user: "peer@example.com" },
+        { accessToken, fetcher, signal: controller.signal },
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
 });
 
 describe("Google Chat list_space_members", () => {
