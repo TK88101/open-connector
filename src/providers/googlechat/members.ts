@@ -164,7 +164,12 @@ async function readSelfUserName(context: GoogleChatRuntimeContext): Promise<stri
     if (context.signal?.aborted) {
       throw error;
     }
-    throw selfLookupError(error);
+    // Only a 403 can mean the People API is not enabled for the project.
+    throw explainLookupError(
+      "could not read the authenticated user's own id from the People API, so members cannot be told apart from the caller",
+      error,
+      "The People API must be enabled for the OAuth client's Google Cloud project.",
+    );
   }
 
   const resourceName = optionalString(payload.resourceName);
@@ -176,20 +181,17 @@ async function readSelfUserName(context: GoogleChatRuntimeContext): Promise<stri
 }
 
 /**
- * Explain a failed People /me call. Only a 403 can mean the People API is not
- * enabled for the project, so the hint is kept to that status; a 429, a 5xx, or a
- * timeout needs a retry, not a console change. A failure that is not an HTTP
- * error, such as a response that is not JSON, becomes a 502 so find_direct_message
- * can still report it as peerError.
+ * Say which lookup behind a direct message peer failed. An HTTP failure keeps its
+ * status and details and gains forbiddenHint on a 403, the only status a console or
+ * consent change can fix; a 429, a 5xx, or a timeout needs a retry instead. A
+ * failure that is not an HTTP error, such as a response that is not JSON, becomes a
+ * 502 so find_direct_message can still report it as peerError.
  */
-function selfLookupError(error: unknown): ProviderRequestError {
-  const summary =
-    "could not read the authenticated user's own id from the People API, so members cannot be told apart from the caller";
+function explainLookupError(summary: string, error: unknown, forbiddenHint: string): ProviderRequestError {
   if (!(error instanceof ProviderRequestError)) {
     return providerResponseError(`${summary}: ${error instanceof Error ? error.message : String(error)}`);
   }
-  const hint =
-    error.status === 403 ? " The People API must be enabled for the OAuth client's Google Cloud project." : "";
+  const hint = error.status === 403 ? ` ${forbiddenHint}` : "";
   // Google's messages usually end in a period already; drop it so the sentence ends once.
   const detail = error.message.replace(/\.\s*$/, "");
   return new ProviderRequestError(error.status, `${summary}: ${detail}.${hint}`, error.details);
@@ -199,10 +201,23 @@ async function listAllMembers(spaceName: string, context: GoogleChatRuntimeConte
   let members: ChatMember[] = [];
   let pageToken: string | undefined;
   for (let page = 0; page < maxDirectMessageMemberPages; page += 1) {
-    // Chat leaves invited members out by default. A peer who has not joined the
-    // conversation yet is still the peer; without it the caller would be the only
-    // member left and the direct message would be misreported as SELF.
-    const result = await fetchMemberPage(spaceName, { pageSize: 100, pageToken, showInvited: true }, context);
+    let result: ChatMemberPage;
+    try {
+      // Chat leaves invited members out by default. A peer who has not joined the
+      // conversation yet is still the peer; without it the caller would be the only
+      // member left and the direct message would be misreported as SELF.
+      result = await fetchMemberPage(spaceName, { pageSize: 100, pageToken, showInvited: true }, context);
+    } catch (error) {
+      if (context.signal?.aborted) {
+        throw error;
+      }
+      // A 403 here is almost always the missing scope: the space itself was readable.
+      throw explainLookupError(
+        `could not list the members of ${spaceName}, so the direct message's other participant is unknown`,
+        error,
+        "Listing members needs the chat.memberships.readonly scope, which service account connections never request; an OAuth connection authorized before this scope was added must be reconnected to grant it.",
+      );
+    }
     members = [...members, ...result.members];
     pageToken = result.nextPageToken;
     if (!pageToken) {

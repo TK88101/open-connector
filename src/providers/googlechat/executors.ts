@@ -196,8 +196,10 @@ async function findDirectMessage(input: Record<string, unknown>, context: Google
   } catch (error) {
     // The space was found; failing to name its other member must not hide that.
     // Report why instead, so the caller knows the recipient is unconfirmed. Only a
-    // cancelled request stops the action; a failure that is not an HTTP error, such
-    // as a network error or a members page that is not JSON, is reported as a 502.
+    // cancelled request stops the action. Listing the members and reading the
+    // caller's own id already say which of them failed, including a network error
+    // or a response that is not JSON as a 502; the prefix below only covers a
+    // failure neither of them anticipated.
     if (context.signal?.aborted) {
       throw error;
     }

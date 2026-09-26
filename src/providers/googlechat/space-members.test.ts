@@ -1,6 +1,7 @@
 import type { ProviderFetch } from "../provider-runtime.ts";
 
 import { describe, expect, it } from "vitest";
+import { ProviderRequestError } from "../provider-runtime.ts";
 import { googleChatActions } from "./actions.ts";
 import { googleChatActionHandlers } from "./executors.ts";
 import {
@@ -419,6 +420,35 @@ describe("Google Chat get_direct_message_peer", () => {
     expect((error as Error).message).toContain("then retry. The People API must be enabled");
     expect((error as Error).message).not.toContain("..");
   });
+
+  it("says listing the members failed and which scope it needs when that listing is forbidden", async () => {
+    const { fetcher } = fakeGoogle({ membersStatus: 403 });
+
+    const error = await googleChatActionHandlers
+      .get_direct_message_peer({ space: "D" }, { accessToken, fetcher })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRequestError);
+    expect(error).toMatchObject({
+      status: 403,
+      message: expect.stringContaining("could not list the members of spaces/D"),
+    });
+    expect((error as Error).message).toContain("status 403. Listing members needs the chat.memberships.readonly scope");
+  });
+
+  it("does not blame a missing scope when listing the members fails for another reason", async () => {
+    const { fetcher } = fakeGoogle({ membersStatus: 503 });
+
+    const error = await googleChatActionHandlers
+      .get_direct_message_peer({ space: "D" }, { accessToken, fetcher })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      status: 503,
+      message: expect.stringContaining("could not list the members of spaces/D"),
+    });
+    expect((error as Error).message).not.toContain("chat.memberships.readonly");
+  });
 });
 
 describe("Google Chat find_direct_message peer", () => {
@@ -450,7 +480,11 @@ describe("Google Chat find_direct_message peer", () => {
     expect(result).toMatchObject({
       name: "spaces/D",
       peer: null,
-      peerError: { status: 403 },
+      // A connection without the memberships scope is the common cause, so the error names it.
+      peerError: {
+        status: 403,
+        message: expect.stringMatching(/^could not list the members of spaces\/D, .*chat\.memberships\.readonly/),
+      },
     });
   });
 
@@ -514,7 +548,7 @@ describe("Google Chat find_direct_message peer", () => {
       peer: null,
       peerError: {
         status: 502,
-        message: expect.stringMatching(new RegExp(`could not resolve the direct message peer: .*${detail}`)),
+        message: expect.stringMatching(new RegExp(`could not list the members of spaces/D, .*: .*${detail}`)),
       },
     });
   });
