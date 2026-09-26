@@ -461,7 +461,7 @@ function resolveMessageName(input: Record<string, unknown>): string {
  * an opaque remote error.
  */
 function resolveThreadName(value: string, parentSpaceName: string): string {
-  const trimmed = trimSlashes(value);
+  const trimmed = trimSlashes(value.trim());
   const [, spaceId, , threadId] = trimmed.split("/");
   if (
     !threadNamePattern.test(trimmed) ||

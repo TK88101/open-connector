@@ -194,7 +194,19 @@ describe("Google Chat create_message", () => {
       await expect(googleChatActionHandlers.create_message(input, context)).rejects.toMatchObject({ status: 400 });
     });
   });
+
+  it("trims surrounding whitespace from the thread name", async () => {
+    const { sent, fetcher } = recordingFetcher();
+
+    await googleChatActionHandlers.create_message(
+      { space: "A", text: "hi", thread: " spaces/A/threads/T \n" },
+      { accessToken, fetcher },
+    );
+
+    expect(sentBody(sent[0].init)).toEqual({ text: "hi", thread: { name: "spaces/A/threads/T" } });
+  });
 });
+
 describe("Google Chat find_direct_message", () => {
   const dmSpace = { name: "spaces/DM1", spaceType: "DIRECT_MESSAGE" };
 
@@ -225,7 +237,7 @@ describe("Google Chat find_direct_message", () => {
     );
 
     // The space lookup comes first; the peer resolution that follows is covered in
-    // direct-message-peer.test.ts.
+    // space-members.test.ts.
     expect(sent[0].url.origin + sent[0].url.pathname).toBe("https://chat.googleapis.com/v1/spaces:findDirectMessage");
     expect(sent[0].init.method ?? "GET").toBe("GET");
     expect(sent[0].url.searchParams.get("name")).toBe("users/person@example.com");
