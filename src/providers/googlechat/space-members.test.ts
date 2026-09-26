@@ -390,6 +390,35 @@ describe("Google Chat get_direct_message_peer", () => {
     expect(error).toMatchObject({ status: 503, message: expect.stringContaining("status 503") });
     expect((error as Error).message).not.toContain("must be enabled");
   });
+
+  it("ends Google's own sentence once when reading the caller's own id is forbidden", async () => {
+    const base = fakeGoogle();
+    const fetcher: ProviderFetch = async (input, init) =>
+      new URL(String(input)).pathname === "/v1/people/me"
+        ? json(
+            {
+              error: {
+                code: 403,
+                message:
+                  "People API has not been used in project 1 before or it is disabled. Enable it by visiting the console, then retry.",
+                status: "PERMISSION_DENIED",
+              },
+            },
+            403,
+          )
+        : base.fetcher(input, init);
+
+    const error = await googleChatActionHandlers
+      .get_direct_message_peer({ space: "D" }, { accessToken, fetcher })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      status: 403,
+      message: expect.stringContaining("could not read the authenticated user's own id"),
+    });
+    expect((error as Error).message).toContain("then retry. The People API must be enabled");
+    expect((error as Error).message).not.toContain("..");
+  });
 });
 
 describe("Google Chat find_direct_message peer", () => {

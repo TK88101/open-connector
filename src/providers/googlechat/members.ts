@@ -190,7 +190,9 @@ function selfLookupError(error: unknown): ProviderRequestError {
   }
   const hint =
     error.status === 403 ? " The People API must be enabled for the OAuth client's Google Cloud project." : "";
-  return new ProviderRequestError(error.status, `${summary}: ${error.message}.${hint}`, error.details);
+  // Google's messages usually end in a period already; drop it so the sentence ends once.
+  const detail = error.message.replace(/\.\s*$/, "");
+  return new ProviderRequestError(error.status, `${summary}: ${detail}.${hint}`, error.details);
 }
 
 async function listAllMembers(spaceName: string, context: GoogleChatRuntimeContext): Promise<ChatMember[]> {
