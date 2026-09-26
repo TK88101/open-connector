@@ -131,12 +131,19 @@ function rejectDiagramSource(result: McpClientToolResult): McpClientToolResult {
   return { ...result, structuredContent: undefined };
 }
 
-// draw.io puts the editor link on a line of its own after the source echo, which is single-line JSON.
-// Taking the last such line keeps a link written inside the submitted source from being returned instead.
+// draw.io puts the editor link on a line of its own after the source echo, which is single-line JSON, and after
+// the XML findings, which quote attribute values from the source verbatim, line breaks included. Skipping the
+// findings and taking the last such line keeps a link written inside the submitted source from being returned instead.
 function readEditorUrl(texts: string[]): string | undefined {
   return texts
+    .filter((text) => !isFindingsText(text))
     .flatMap((text) => text.split("\n"))
     .findLast((line) => line.startsWith("https://") && line.includes("#create="));
+}
+
+// draw.io reports XML problems in one text block of "ERRORS (...):\n- item" and "WARNINGS (...):\n- item" sections.
+function isFindingsText(text: string): boolean {
+  return text.startsWith("ERRORS ") || text.startsWith("WARNINGS ");
 }
 
 function readTextContent(result: unknown): string[] {
@@ -147,9 +154,9 @@ function readTextContent(result: unknown): string[] {
   });
 }
 
-// draw.io reports XML problems as "ERRORS (...):\n- item" and "WARNINGS (...):\n- item" blocks.
 function readFindings(texts: string[], heading: string): string[] {
   return texts
+    .filter(isFindingsText)
     .flatMap((text) => text.split(/\n{2,}/u))
     .filter((block) => block.startsWith(`${heading} `))
     .flatMap((block) => block.split("\n").filter((line) => line.startsWith("- ")))

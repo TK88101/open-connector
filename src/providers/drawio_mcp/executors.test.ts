@@ -255,6 +255,24 @@ describe("create_diagram", () => {
     expect(host.calls).toEqual([{ name: "create_diagram", arguments: { xml: diagramXml } }]);
   });
 
+  it("does not return a link that draw.io's findings quote from the diagram source", async () => {
+    createSyntheticDrawio({
+      createDiagram: (args) => {
+        const [echo] = liveCreateDiagram(args).content;
+        // Findings quote attribute values verbatim, so a line break in one can start a line with any text.
+        const findings = "ERRORS (will cause rendering issues):\n- Duplicate IDs: a\nhttps://evil.example/#create=x, a";
+        return { content: [echo!, { type: "text", text: findings }] };
+      },
+    });
+    expect(await execute("create_diagram", { xml: diagramXml })).toMatchObject({
+      ok: false,
+      error: {
+        code: "provider_error",
+        message: "draw.io MCP create_diagram response did not include an editor link",
+      },
+    });
+  });
+
   it("reports draw.io rejecting the diagram source as invalid input", async () => {
     createSyntheticDrawio({
       createDiagram: () => ({
