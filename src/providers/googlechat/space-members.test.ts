@@ -310,6 +310,15 @@ describe("Google Chat get_direct_message_peer", () => {
     expect(requests.some((url) => url.pathname.endsWith("/members"))).toBe(false);
   });
 
+  it("reports a space Google returns without a type as a bad upstream response, not bad input", async () => {
+    const { requests, fetcher } = fakeGoogle({ space: { name: "spaces/D" } });
+
+    await expect(
+      googleChatActionHandlers.get_direct_message_peer({ space: "D" }, { accessToken, fetcher }),
+    ).rejects.toMatchObject({ status: 502, message: expect.stringContaining("without a space type") });
+    expect(requests.some((url) => url.pathname.endsWith("/members"))).toBe(false);
+  });
+
   it("rejects an invalid space name before any request", async () => {
     const { requests, fetcher } = fakeGoogle();
 

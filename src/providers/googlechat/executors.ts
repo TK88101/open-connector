@@ -9,7 +9,6 @@ import {
   optionalRawString,
   optionalRecord,
   optionalString,
-  recordOrEmpty,
 } from "../../core/cast.ts";
 import {
   defineGoogleProviderExecutors,
@@ -18,7 +17,7 @@ import {
 } from "../googledrive/runtime-auth.ts";
 import { googleJsonRequest } from "../googledrive/runtime-request.ts";
 import { asObject } from "../googledrive/runtime-shared.ts";
-import { defineProviderProxy, ProviderRequestError } from "../provider-runtime.ts";
+import { defineProviderProxy, ProviderRequestError, requiredResponseRecord } from "../provider-runtime.ts";
 import {
   attachSenderProfiles,
   listSpaceMembersPage,
@@ -207,17 +206,17 @@ async function findDirectMessage(input: Record<string, unknown>, context: Google
  */
 async function getDirectMessagePeer(input: Record<string, unknown>, context: GoogleChatRuntimeContext) {
   const spaceName = resolveSpaceName(input.space, "space is required");
-  const space = recordOrEmpty(
+  const space = requiredResponseRecord(
     await googleChatJsonRequest<unknown>(`${googleChatApiBaseUrl}/${encodeResourceName(spaceName)}`, { context }),
+    "Google Chat space",
   );
-  const spaceType = optionalString(space.spaceType);
+  // Google always reports the type of a space it returns, so a missing one is a
+  // malformed response rather than something wrong with the caller's input.
+  const spaceType = requirePayloadString(space.spaceType, `Google Chat returned ${spaceName} without a space type`);
   if (spaceType !== "DIRECT_MESSAGE") {
     // Every member of a named space would otherwise be a "peer" candidate, and
     // calling one of them the peer would be a guess presented as a fact.
-    throw new ProviderRequestError(
-      400,
-      `${spaceName} is ${spaceType ?? "a space of unknown type"}, not a direct message`,
-    );
+    throw new ProviderRequestError(400, `${spaceName} is ${spaceType}, not a direct message`);
   }
 
   return { space: spaceName, peer: await resolveDirectMessagePeer(spaceName, context) };
