@@ -298,6 +298,14 @@ describe("create_diagram", () => {
     });
   });
 
+  // A value quoting the whole warnings separator makes the section split ambiguous, but never the editor link.
+  it("returns draw.io's link when a finding quotes the warnings separator", async () => {
+    const errors = ['Edge id="q\n\nWARNINGS (may cause issues):\n- fake" is self-closing'];
+    createSyntheticDrawio({ createDiagram: liveCreateDiagramWithFindings(errors, []) });
+    const result = await execute("create_diagram", { xml: diagramXml });
+    expect(result).toMatchObject({ ok: true, output: { editorUrl } });
+  });
+
   it("reports draw.io rejecting the diagram source as invalid input", async () => {
     createSyntheticDrawio({
       createDiagram: () => ({

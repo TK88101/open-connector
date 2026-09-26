@@ -163,8 +163,10 @@ function readTextContent(result: unknown): string[] {
 
 // Findings items quote attribute values verbatim, so blank lines and line starts can come from the source. Only
 // draw.io's exact layout splits the block: each heading is followed by the items joined with "\n- ", and a blank
-// line separates the errors section from the warnings section. A value that itself contains "\n- " still reads as
-// two items, since the layout leaves no way to tell them apart.
+// line separates the errors section from the warnings section. The layout leaves no way to tell a quoted value from
+// that structure: a value that itself contains "\n- " still reads as two items, and one that contains the whole
+// "\n\nWARNINGS (may cause issues):\n- " separator can move items between errors and warnings. The editor link is
+// unaffected, since readEditorUrl skips the findings block as a whole.
 function readFindings(texts: string[]): DrawioFindings {
   const text = texts.find(isFindingsText) ?? "";
   if (text.startsWith(warningsHeading)) {
