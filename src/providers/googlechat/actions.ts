@@ -42,6 +42,13 @@ const spaceProperties = {
 
 const space = s.object("A normalized Google Chat space.", spaceProperties, { required: ["name", "spaceId"] });
 
+const profileUnavailableReasons = [
+  "profile_name_missing",
+  "people_forbidden",
+  "people_not_found",
+  "people_request_failed",
+];
+
 const directMessagePeer = s.object(
   "The other participant of a direct message, named by Google Chat or, where Chat leaves the name out, through the Workspace directory.",
   {
@@ -58,7 +65,7 @@ const directMessagePeer = s.object(
     ),
     profileUnavailableReason: s.stringEnum(
       "Why displayName is null for a HUMAN peer: profile_name_missing when the directory returned no name (profile sharing may be off), people_forbidden or people_not_found for a 403 or 404 from the People API, people_request_failed for any other failure.",
-      ["profile_name_missing", "people_forbidden", "people_not_found", "people_request_failed"],
+      profileUnavailableReasons,
     ),
     candidates: s.stringArray("For an AMBIGUOUS peer, the users/{user} names of the members that could be the peer."),
   },
@@ -80,7 +87,7 @@ const spaceMember = s.object(
     ),
     profileUnavailableReason: s.stringEnum(
       "Why displayName is null for a human member: profile_name_missing when the directory returned no name (profile sharing may be off), people_forbidden or people_not_found when the People API refused or could not find the profile, people_request_failed for any other failure.",
-      ["profile_name_missing", "people_forbidden", "people_not_found", "people_request_failed"],
+      profileUnavailableReasons,
     ),
   },
   { required: ["user", "isSelf", "displayName", "email"] },
@@ -96,7 +103,7 @@ const messageSender = s.object("The user who created the message.", {
   ),
   profileUnavailableReason: s.stringEnum(
     "Why displayName is null for a human sender: profile_name_missing, people_forbidden, people_not_found, or people_request_failed. Names need the directory.readonly scope and the People API.",
-    ["profile_name_missing", "people_forbidden", "people_not_found", "people_request_failed"],
+    profileUnavailableReasons,
   ),
   type: s.string("The sender type, either HUMAN or BOT."),
   domainId: s.string("The Google Workspace domain ID of the sender."),
