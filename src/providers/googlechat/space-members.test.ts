@@ -640,6 +640,23 @@ describe("Google Chat list_space_members", () => {
     });
   });
 
+  it("still lists the members when the directory lookup returns something other than JSON", async () => {
+    const base = fakeGoogle({ memberPages: [[human(selfId), human(peerId)]] });
+    const fetcher: ProviderFetch = async (input, init) =>
+      new URL(String(input)).pathname === "/v1/people:batchGet"
+        ? new Response("<html>oops</html>", { status: 200 })
+        : base.fetcher(input, init);
+
+    const result = await googleChatActionHandlers.list_space_members({ space: "D" }, { accessToken, fetcher });
+
+    expect(result).toMatchObject({
+      members: [
+        { user: `users/${selfId}`, displayName: null, profileUnavailableReason: "people_request_failed" },
+        { user: `users/${peerId}`, displayName: null, profileUnavailableReason: "people_request_failed" },
+      ],
+    });
+  });
+
   it("skips the directory lookup when a page has no human members", async () => {
     const { requests, fetcher } = fakeGoogle({ memberPages: [[bot("B1")]] });
 

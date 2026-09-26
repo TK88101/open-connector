@@ -323,10 +323,13 @@ async function lookupProfileBatch(
       }),
     );
   } catch (error) {
-    if (!(error instanceof ProviderRequestError)) {
+    // Naming is best effort, so only a cancelled request stops the action. Any
+    // other failure, including a network error or a 200 whose body is not JSON,
+    // leaves the users unnamed with a reason.
+    if (context.signal?.aborted) {
       throw error;
     }
-    const reason = httpFailureReason(error.status);
+    const reason = error instanceof ProviderRequestError ? httpFailureReason(error.status) : "people_request_failed";
     return new Map(users.map((user) => [user, unavailableProfile(reason)]));
   }
 

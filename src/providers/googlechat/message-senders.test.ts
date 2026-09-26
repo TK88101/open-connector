@@ -223,6 +223,52 @@ describe("Google Chat message sender names", () => {
     });
   });
 
+  it.each([
+    ["a 200 whose body is not JSON", () => new Response("<html>oops</html>", { status: 200 })],
+    [
+      "a network failure",
+      () => {
+        throw new TypeError("fetch failed");
+      },
+    ],
+  ])("still returns the messages when the directory lookup hits %s", async (_label, batchGet) => {
+    const base = fakeGoogle({ messages: [{ name: "spaces/A/messages/1", sender: humanSender("1") }] });
+    const fetcher: ProviderFetch = async (input, init) =>
+      new URL(String(input)).pathname === "/v1/people:batchGet" ? batchGet() : base.fetcher(input, init);
+
+    const result = await googleChatActionHandlers.list_messages({ space: "A" }, { accessToken, fetcher });
+
+    expect(result).toMatchObject({
+      messages: [
+        {
+          name: "spaces/A/messages/1",
+          sender: {
+            name: "users/1",
+            displayName: null,
+            email: null,
+            profileUnavailableReason: "people_request_failed",
+          },
+        },
+      ],
+    });
+  });
+
+  it("still stops when the caller cancels during the directory lookup", async () => {
+    const controller = new AbortController();
+    const base = fakeGoogle({ messages: [{ name: "spaces/A/messages/1", sender: humanSender("1") }] });
+    const fetcher: ProviderFetch = async (input, init) => {
+      if (new URL(String(input)).pathname === "/v1/people:batchGet") {
+        controller.abort();
+        throw new DOMException("The operation was aborted.", "AbortError");
+      }
+      return base.fetcher(input, init);
+    };
+
+    await expect(
+      googleChatActionHandlers.list_messages({ space: "A" }, { accessToken, fetcher, signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("does not look anything up for messages without a sender", async () => {
     const { requests, fetcher } = fakeGoogle({ messages: [{ name: "spaces/A/messages/1" }] });
 
