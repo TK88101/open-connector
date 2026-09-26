@@ -368,12 +368,27 @@ describe("Google Chat get_direct_message_peer", () => {
   it("fails loudly when the authenticated user's own id cannot be read", async () => {
     const { fetcher } = fakeGoogle({ selfStatus: 403 });
 
-    await expect(
-      googleChatActionHandlers.get_direct_message_peer({ space: "D" }, { accessToken, fetcher }),
-    ).rejects.toMatchObject({
+    const error = await googleChatActionHandlers
+      .get_direct_message_peer({ space: "D" }, { accessToken, fetcher })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
       status: 403,
       message: expect.stringContaining("could not read the authenticated user's own id"),
     });
+    // A 403 is the status a People API that is not enabled for the project answers with.
+    expect((error as Error).message).toContain("The People API must be enabled");
+  });
+
+  it("does not blame a disabled People API when reading the caller's own id fails for another reason", async () => {
+    const { fetcher } = fakeGoogle({ selfStatus: 503 });
+
+    const error = await googleChatActionHandlers
+      .get_direct_message_peer({ space: "D" }, { accessToken, fetcher })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ status: 503, message: expect.stringContaining("status 503") });
+    expect((error as Error).message).not.toContain("must be enabled");
   });
 });
 
@@ -423,6 +438,25 @@ describe("Google Chat find_direct_message peer", () => {
       peer: { kind: "BOT", user: "users/B1", displayName: "Helper Bot", email: null },
     });
     expect(batchLookups(requests)).toHaveLength(0);
+  });
+
+  it("still returns the space when the caller's own id comes back as something other than JSON", async () => {
+    const base = fakeGoogle();
+    const fetcher: ProviderFetch = async (input, init) =>
+      new URL(String(input)).pathname === "/v1/people/me"
+        ? new Response("<html>oops</html>", { status: 200 })
+        : base.fetcher(input, init);
+
+    const result = await googleChatActionHandlers.find_direct_message(
+      { user: "peer@example.com" },
+      { accessToken, fetcher },
+    );
+
+    expect(result).toMatchObject({
+      name: "spaces/D",
+      peer: null,
+      peerError: { status: 502, message: expect.stringContaining("could not read the authenticated user's own id") },
+    });
   });
 });
 

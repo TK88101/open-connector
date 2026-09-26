@@ -1,7 +1,7 @@
 import type { GoogleChatRuntimeContext } from "./runtime.ts";
 
 import { compactObject, looseArray, optionalRecord, optionalString, recordOrEmpty } from "../../core/cast.ts";
-import { ProviderRequestError } from "../provider-runtime.ts";
+import { ProviderRequestError, providerResponseError } from "../provider-runtime.ts";
 import { encodeResourceName, googleChatApiBaseUrl, googleChatJsonRequest, stripPrefix } from "./runtime.ts";
 
 const peopleApiBaseUrl = "https://people.googleapis.com/v1";
@@ -161,14 +161,10 @@ async function readSelfUserName(context: GoogleChatRuntimeContext): Promise<stri
       }),
     );
   } catch (error) {
-    if (!(error instanceof ProviderRequestError)) {
+    if (context.signal?.aborted) {
       throw error;
     }
-    throw new ProviderRequestError(
-      error.status,
-      `could not read the authenticated user's own id from the People API, so members cannot be told apart from the caller: ${error.message}. The People API must be enabled for the OAuth client's Google Cloud project.`,
-      error.details,
-    );
+    throw selfLookupError(error);
   }
 
   const resourceName = optionalString(payload.resourceName);
@@ -177,6 +173,24 @@ async function readSelfUserName(context: GoogleChatRuntimeContext): Promise<stri
   }
 
   return `users/${stripPrefix(resourceName, "people/")}`;
+}
+
+/**
+ * Explain a failed People /me call. Only a 403 can mean the People API is not
+ * enabled for the project, so the hint is kept to that status; a 429, a 5xx, or a
+ * timeout needs a retry, not a console change. A failure that is not an HTTP
+ * error, such as a response that is not JSON, becomes a 502 so find_direct_message
+ * can still report it as peerError.
+ */
+function selfLookupError(error: unknown): ProviderRequestError {
+  const summary =
+    "could not read the authenticated user's own id from the People API, so members cannot be told apart from the caller";
+  if (!(error instanceof ProviderRequestError)) {
+    return providerResponseError(`${summary}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const hint =
+    error.status === 403 ? " The People API must be enabled for the OAuth client's Google Cloud project." : "";
+  return new ProviderRequestError(error.status, `${summary}: ${error.message}.${hint}`, error.details);
 }
 
 async function listAllMembers(spaceName: string, context: GoogleChatRuntimeContext): Promise<ChatMember[]> {
