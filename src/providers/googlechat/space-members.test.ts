@@ -50,8 +50,8 @@ function namedHuman(id: string, displayName: string, email?: string): Membership
   return { member: { name: `users/${id}`, type: "HUMAN", displayName, email }, role: "ROLE_MEMBER" };
 }
 
-function bot(id: string): Membership {
-  return { member: { name: `users/${id}`, type: "BOT" }, role: "ROLE_MEMBER" };
+function bot(id: string, displayName?: string): Membership {
+  return { member: { name: `users/${id}`, type: "BOT", displayName }, role: "ROLE_MEMBER" };
 }
 
 function person(names: string[], emails: string[] = []): FakePerson {
@@ -259,6 +259,30 @@ describe("Google Chat get_direct_message_peer", () => {
     expect(batchLookups(requests)).toHaveLength(0);
   });
 
+  it("keeps the name Google Chat reports for a bot peer without a People lookup", async () => {
+    const { requests, fetcher } = fakeGoogle({ memberPages: [[human(selfId), bot("B1", "Helper Bot")]] });
+
+    const result = await googleChatActionHandlers.get_direct_message_peer({ space: "D" }, { accessToken, fetcher });
+
+    expect(result).toEqual({
+      space: "spaces/D",
+      peer: { kind: "BOT", user: "users/B1", displayName: "Helper Bot", email: null },
+    });
+    expect(batchLookups(requests)).toHaveLength(0);
+  });
+
+  it("keeps the name and email Google Chat reports for a direct message with only yourself", async () => {
+    const { requests, fetcher } = fakeGoogle({ memberPages: [[namedHuman(selfId, "Chat Self", "self@example.com")]] });
+
+    const result = await googleChatActionHandlers.get_direct_message_peer({ space: "D" }, { accessToken, fetcher });
+
+    expect(result).toEqual({
+      space: "spaces/D",
+      peer: { kind: "SELF", user: `users/${selfId}`, displayName: "Chat Self", email: "self@example.com" },
+    });
+    expect(batchLookups(requests)).toHaveLength(0);
+  });
+
   it("reports more than one other human as ambiguous instead of picking one", async () => {
     const { requests, fetcher } = fakeGoogle({ memberPages: [[human(selfId), human(peerId), human("333")]] });
 
@@ -375,6 +399,21 @@ describe("Google Chat find_direct_message peer", () => {
       peer: null,
       peerError: { status: 403 },
     });
+  });
+
+  it("names a bot peer the way list_space_members does", async () => {
+    const { requests, fetcher } = fakeGoogle({ memberPages: [[human(selfId), bot("B1", "Helper Bot")]] });
+
+    const result = await googleChatActionHandlers.find_direct_message(
+      { user: "peer@example.com" },
+      { accessToken, fetcher },
+    );
+
+    expect(result).toMatchObject({
+      name: "spaces/D",
+      peer: { kind: "BOT", user: "users/B1", displayName: "Helper Bot", email: null },
+    });
+    expect(batchLookups(requests)).toHaveLength(0);
   });
 });
 

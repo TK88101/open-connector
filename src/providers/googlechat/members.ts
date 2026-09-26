@@ -82,7 +82,8 @@ interface SpaceMembersPageRequest {
 /**
  * Name the other participant of a direct message. The authenticated user and the
  * peer are told apart by id, because a Chat membership never says which member is
- * "me". BOT and SELF are ordinary outcomes, not failures, and skip the directory.
+ * "me". BOT and SELF are ordinary outcomes, not failures: they keep whatever name
+ * and email Chat reports for the membership and skip the directory.
  */
 export async function resolveDirectMessagePeer(
   spaceName: string,
@@ -90,8 +91,9 @@ export async function resolveDirectMessagePeer(
 ): Promise<DirectMessagePeer> {
   const [selfUser, members] = await Promise.all([readSelfUserName(context), listAllMembers(spaceName, context)]);
   const humans = members.filter((member) => member.type === "HUMAN");
-  const bots = members.filter((member) => member.type === "BOT").map((member) => member.name);
+  const bots = members.filter((member) => member.type === "BOT");
   const others = humans.filter((member) => member.name !== selfUser);
+  const self = humans.find((member) => member.name === selfUser);
 
   if (others.length === 1) {
     const [peer] = others;
@@ -99,20 +101,17 @@ export async function resolveDirectMessagePeer(
     return { kind: "HUMAN", user: peer.name, ...mergeProfile(peer, profiles.get(peer.name)) };
   }
   if (others.length > 1) {
-    return unresolvedPeer(
-      "AMBIGUOUS",
-      null,
-      others.map((member) => member.name),
-    );
+    return ambiguousPeer(others);
   }
   if (bots.length === 1) {
-    return unresolvedPeer("BOT", bots[0]);
+    const [peer] = bots;
+    return { kind: "BOT", user: peer.name, ...mergeProfile(peer, undefined) };
   }
-  if (bots.length === 0 && humans.some((member) => member.name === selfUser)) {
-    return unresolvedPeer("SELF", selfUser);
+  if (bots.length === 0 && self) {
+    return { kind: "SELF", user: self.name, ...mergeProfile(self, undefined) };
   }
 
-  return unresolvedPeer("AMBIGUOUS", null, bots);
+  return ambiguousPeer(bots);
 }
 
 /**
@@ -141,8 +140,14 @@ export async function listSpaceMembersPage(
   };
 }
 
-function unresolvedPeer(kind: DirectMessagePeerKind, user: string | null, candidates?: string[]): DirectMessagePeer {
-  return { kind, user, displayName: null, email: null, candidates };
+function ambiguousPeer(candidates: ChatMember[]): DirectMessagePeer {
+  return {
+    kind: "AMBIGUOUS",
+    user: null,
+    displayName: null,
+    email: null,
+    candidates: candidates.map((member) => member.name),
+  };
 }
 
 /** The authenticated user's own `users/{id}`; People and Chat share the id. */

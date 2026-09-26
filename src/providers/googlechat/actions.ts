@@ -58,10 +58,10 @@ const directMessagePeer = s.object(
     ),
     user: s.nullableString("The peer's resource name, in the form users/{user}. Null when the peer is AMBIGUOUS."),
     displayName: s.nullableString(
-      "The peer's name as Google Chat reports it, or from the Workspace directory when Chat leaves it out. Null for BOT, SELF, AMBIGUOUS, or when neither reveals it; profileUnavailableReason then says why.",
+      "The peer's name as Google Chat reports it, or, for a HUMAN peer, from the Workspace directory when Chat leaves it out. Null for AMBIGUOUS, or when neither reveals it; for a HUMAN peer profileUnavailableReason then says why. BOT and SELF peers are never looked up in the directory.",
     ),
     email: s.nullableString(
-      "The peer's email address as Google Chat reports it, or the primary one from the Workspace directory, when visible.",
+      "The peer's email address as Google Chat reports it, or, for a HUMAN peer, the primary one from the Workspace directory, when visible. Null for AMBIGUOUS.",
     ),
     profileUnavailableReason: s.stringEnum(
       "Why displayName is null for a HUMAN peer: profile_name_missing when the directory returned no name (profile sharing may be off), people_forbidden or people_not_found for a 403 or 404 from the People API, people_request_failed for any other failure.",
