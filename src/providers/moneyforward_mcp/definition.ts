@@ -8,7 +8,7 @@ export const provider: ProviderDefinition = {
   displayName: "Money Forward クラウド会計 MCP",
   description:
     "Read and write Money Forward クラウド会計 books (offices, accounts, journals, trial balances, transition reports, bank and card transactions) through Money Forward's official MCP server. One multi-office API key covers every office it was issued for; each call names its office.",
-  categories: ["Finance", "Accounting"],
+  categories: ["Finance", "Data"],
   authTypes: ["api_key"],
   auth: [
     {

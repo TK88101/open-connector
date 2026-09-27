@@ -4,7 +4,7 @@ import type { ApiKeyProviderContext, ProviderFetch, ProviderRuntimeHandler } fro
 import type { MoneyforwardToolEntry } from "./manifest.ts";
 
 import { sha256Hex } from "../../core/aws-sigv4.ts";
-import { compactObject, looseArray, optionalRecord } from "../../core/cast.ts";
+import { compactObject, looseArray, optionalNumber, optionalRecord, optionalString } from "../../core/cast.ts";
 import { callMcpTool, listMcpTools } from "../mcp-tools.ts";
 import {
   createProviderTimeout,
@@ -130,7 +130,7 @@ async function runWrite(
   timing: MoneyforwardRuntimeOptions,
 ): Promise<unknown> {
   const args = toolArguments(entry, input);
-  const expectedName = typeof input.expected_office_name === "string" ? input.expected_office_name.trim() : "";
+  const expectedName = optionalString(input.expected_office_name);
   if (!expectedName) throw writeError(providerInputError("expected_office_name is required"), "definitely_not_sent");
   // Flipped by the authorizeTool hook, the last step before callMcpTool sends tools/call.
   const phase = { dispatched: false };
@@ -166,8 +166,8 @@ async function confirmOffice(officeCode: string, expectedName: string, options: 
     toolName: currentOfficeToolName,
     arguments: { office_code: officeCode },
   });
-  const payload = readPayload(currentOfficeToolName, office) as { code?: unknown; name?: unknown } | undefined;
-  const actualName = typeof payload?.name === "string" ? payload.name : "";
+  const payload = optionalRecord(readPayload(currentOfficeToolName, office));
+  const actualName = optionalString(payload?.name);
   if (payload?.code !== officeCode || !actualName) {
     throw providerInputError(`Money Forward did not confirm office ${officeCode}; nothing was written.`);
   }
@@ -250,10 +250,10 @@ function summarizeSubmission(entry: MoneyforwardToolEntry, args: Record<string, 
 }
 
 function sumDebits(branches: unknown[]): number {
-  return branches.reduce<number>((total, branch) => {
-    const value = optionalRecord(optionalRecord(branch)?.debitor)?.value;
-    return typeof value === "number" ? total + value : total;
-  }, 0);
+  return branches.reduce<number>(
+    (total, branch) => total + (optionalNumber(optionalRecord(optionalRecord(branch)?.debitor)?.value) ?? 0),
+    0,
+  );
 }
 
 /**
