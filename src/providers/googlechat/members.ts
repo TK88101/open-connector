@@ -181,11 +181,11 @@ async function readSelfUserName(context: GoogleChatRuntimeContext): Promise<stri
 }
 
 /**
- * Say which lookup behind a direct message peer failed. An HTTP failure keeps its
- * status and details and gains forbiddenHint on a 403, the only status a console or
- * consent change can fix; a 429, a 5xx, or a timeout needs a retry instead. A
- * failure that is not an HTTP error, such as a response that is not JSON, becomes a
- * 502 so find_direct_message can still report it as peerError.
+ * Say which Chat or People lookup failed. An HTTP failure keeps its status and
+ * details and gains forbiddenHint on a 403, the only status a console or consent
+ * change can fix; a 429, a 5xx, or a timeout needs a retry instead. A failure that
+ * is not an HTTP error, such as a response that is not JSON, becomes a 502 that
+ * names the lookup instead of reaching the caller as a raw internal error.
  */
 function explainLookupError(summary: string, error: unknown, forbiddenHint: string): ProviderRequestError {
   if (!(error instanceof ProviderRequestError)) {
