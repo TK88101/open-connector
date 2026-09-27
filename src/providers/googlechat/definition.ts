@@ -61,7 +61,7 @@ export const provider: ProviderDefinition = {
           secret: false,
           placeholder: "user@your-domain.com",
           description:
-            "Workspace user to impersonate through domain-wide delegation. In the Workspace Admin console (Security > Access and data control > API Controls > Domain-wide Delegation), grant the service account client ID the Chat scopes this provider requests.",
+            "Workspace user to impersonate through domain-wide delegation. In the Workspace Admin console (Security > Access and data control > API Controls > Domain-wide Delegation), grant the service account client ID https://www.googleapis.com/auth/chat.spaces.readonly, https://www.googleapis.com/auth/chat.messages.readonly, openid, email, and profile. Service account connections only read spaces and messages; sending messages and naming members need an OAuth connection.",
         },
       ],
     },
