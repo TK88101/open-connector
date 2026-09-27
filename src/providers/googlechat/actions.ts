@@ -214,7 +214,7 @@ const actions: GoogleChatActionSource[] = [
   action(
     "list_space_members",
     "read",
-    "List the members of any Google Chat space, including group spaces, with each person's name and email. Under user authentication Google Chat may report a member only as users/{id}, so every human on a page whose name or email Chat leaves out is looked up in the Workspace directory through the People API in one batch. Returns one page at a time; pass nextPageToken back as pageToken for the next page. Members whose profile cannot be read keep their users/{id} with a null displayName and a profileUnavailableReason.",
+    "List the members of any Google Chat space, including group spaces, with each person's name and email. Like Google Chat's default, it leaves out memberships held through a Google Group and people who were invited but have not joined. Under user authentication Google Chat may report a member only as users/{id}, so every human on a page whose name or email Chat leaves out is looked up in the Workspace directory through the People API in one batch. Returns one page at a time; pass nextPageToken back as pageToken for the next page. Members whose profile cannot be read keep their users/{id} with a null displayName and a profileUnavailableReason.",
     [googleChatMembershipsReadonlyScope, googleDirectoryReadonlyScope],
     s.actionInput(
       {
