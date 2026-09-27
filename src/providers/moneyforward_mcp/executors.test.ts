@@ -631,6 +631,7 @@ describe("deadline", () => {
     // drops the late answer itself; the authorizeTool abort check is the backstop if that ever changes.
     await new Promise((resolve) => setTimeout(resolve, 400));
     // The office check has no tools/list, so the held answer is the write's own schema discovery.
+    expect(host.methods).toContain("tools/call:mfc_ca_currentOffice");
     expect(host.methods.indexOf("tools/call:mfc_ca_currentOffice")).toBeLessThan(host.methods.indexOf("tools/list"));
     expect(host.methods).not.toContain("tools/call:mfc_ca_postJournals");
   });
