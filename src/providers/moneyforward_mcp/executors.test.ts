@@ -59,6 +59,8 @@ interface SyntheticOptions {
   hangSessionDelete?: boolean;
   /** Answer every POST with a 307 to this URL. */
   redirectTo?: string;
+  /** Hold every tools/list response this long, ignoring the request signal like a stalled transport. */
+  delayToolsListMs?: number;
 }
 
 function textResult(value: unknown): CallToolResult {
@@ -120,6 +122,9 @@ function createSyntheticMoneyforward(options: SyntheticOptions = {}) {
     const message = request.method === "POST" ? JSON.parse(await request.clone().text()) : undefined;
     if (message?.method) {
       methods.push(message.method === "tools/call" ? `tools/call:${message.params.name}` : message.method);
+    }
+    if (message?.method === "tools/list" && options.delayToolsListMs !== undefined) {
+      await new Promise((resolve) => setTimeout(resolve, options.delayToolsListMs));
     }
     if (request.method === "DELETE" && options.hangSessionDelete) return new Promise<Response>(() => {});
     if (options.redirectTo !== undefined && request.method === "POST") {
@@ -613,6 +618,19 @@ describe("deadline", () => {
     await expect(
       handlers.post_journals!(journalInput, { ...context(), signal: AbortSignal.abort() }),
     ).rejects.toMatchObject({ details: { writeOutcome: "definitely_not_sent" } });
+    expect(host.methods).not.toContain("tools/call:mfc_ca_postJournals");
+  });
+
+  it("never dispatches a write whose tools/list answers after the deadline", async () => {
+    const host = createSyntheticMoneyforward({ delayToolsListMs: 300 });
+    const handlers = createMoneyforwardMcpHandlers(timing);
+    await expect(handlers.post_journals!(journalInput, context())).rejects.toMatchObject({
+      details: { writeOutcome: "definitely_not_sent" },
+    });
+    // Let the held tools/list answer, so a late dispatch would have been recorded by now. Today the SDK
+    // drops the late answer itself; the authorizeTool abort check is the backstop if that ever changes.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(host.methods).toContain("tools/list");
     expect(host.methods).not.toContain("tools/call:mfc_ca_postJournals");
   });
 });
