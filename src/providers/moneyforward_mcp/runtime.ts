@@ -143,6 +143,12 @@ async function runWrite(
         toolName: entry.toolName,
         arguments: args,
         authorizeTool(tool) {
+          // A late tools/list must not dispatch after the backstop has already reported definitely_not_sent.
+          if (signal.aborted) {
+            throw providerResponseError(
+              "The Money Forward write was cancelled before it was sent; nothing was written.",
+            );
+          }
           assertSchemaUnchanged(entry, tool, expectedDigest(entry, timing.schemaDigests));
           phase.dispatched = true;
         },
