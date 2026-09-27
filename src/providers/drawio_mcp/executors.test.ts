@@ -307,6 +307,12 @@ describe("create_diagram", () => {
     expect(result).toMatchObject({ ok: true, output: { editorUrl } });
   });
 
+  it("drops the empty item left by a quoted value that ends in the item separator", async () => {
+    createSyntheticDrawio({ createDiagram: liveCreateDiagramWithFindings(["Duplicate IDs: a\n- "], []) });
+    const result = await execute("create_diagram", { xml: diagramXml });
+    expect(result).toEqual({ ok: true, output: { editorUrl, errors: ["Duplicate IDs: a"], warnings: [] } });
+  });
+
   it("reports draw.io rejecting the diagram source as invalid input", async () => {
     createSyntheticDrawio({
       createDiagram: () => ({

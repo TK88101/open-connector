@@ -172,7 +172,7 @@ function readTextContent(result: unknown): string[] {
 function readFindings(texts: string[]): DrawioFindings {
   const text = texts.find(isFindingsText) ?? "";
   if (text.startsWith(warningsHeading)) {
-    return { errors: [], warnings: text.slice(warningsHeading.length).split("\n- ") };
+    return { errors: [], warnings: splitFindings(text.slice(warningsHeading.length)) };
   }
   if (!text.startsWith(errorsHeading)) {
     return { errors: [], warnings: [] };
@@ -180,12 +180,18 @@ function readFindings(texts: string[]): DrawioFindings {
   const body = text.slice(errorsHeading.length);
   const separator = body.lastIndexOf(`\n\n${warningsHeading}`);
   if (separator < 0) {
-    return { errors: body.split("\n- "), warnings: [] };
+    return { errors: splitFindings(body), warnings: [] };
   }
   return {
-    errors: body.slice(0, separator).split("\n- "),
-    warnings: body.slice(separator + 2 + warningsHeading.length).split("\n- "),
+    errors: splitFindings(body.slice(0, separator)),
+    warnings: splitFindings(body.slice(separator + 2 + warningsHeading.length)),
   };
+}
+
+// draw.io never reports an empty finding, so an empty piece can only come from a quoted value that contains the
+// separator, such as one ending in "\n- ", and is dropped.
+function splitFindings(section: string): string[] {
+  return section.split("\n- ").filter((item) => item !== "");
 }
 
 // Newer draw.io servers return structured shapes; the hosted server returns a JSON array as text.
