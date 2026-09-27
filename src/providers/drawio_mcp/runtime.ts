@@ -50,7 +50,9 @@ export const drawioMcpActionHandlers: ProviderActionHandlers<"drawio_mcp", Provi
     const texts = readTextContent(result);
     const editorUrl = readEditorUrl(texts);
     if (editorUrl === undefined) {
-      throw providerResponseError("draw.io MCP create_diagram response did not include an editor link");
+      throw providerResponseError(
+        "draw.io MCP create_diagram response did not include an editor link; a self-hosted server must be jgraph/drawio-mcp mcp-app-server 1.0.4 or later",
+      );
     }
     return { editorUrl, ...readFindings(texts) };
   },

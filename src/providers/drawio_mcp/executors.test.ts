@@ -293,7 +293,8 @@ describe("create_diagram", () => {
       ok: false,
       error: {
         code: "provider_error",
-        message: "draw.io MCP create_diagram response did not include an editor link",
+        message:
+          "draw.io MCP create_diagram response did not include an editor link; a self-hosted server must be jgraph/drawio-mcp mcp-app-server 1.0.4 or later",
       },
     });
   });
@@ -341,7 +342,8 @@ describe("create_diagram", () => {
       ok: false,
       error: {
         code: "provider_error",
-        message: "draw.io MCP create_diagram response did not include an editor link",
+        message:
+          "draw.io MCP create_diagram response did not include an editor link; a self-hosted server must be jgraph/drawio-mcp mcp-app-server 1.0.4 or later",
       },
     });
   });

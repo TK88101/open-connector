@@ -23,7 +23,7 @@ export const provider: ProviderDefinition = {
           secret: false,
           placeholder: "https://mcp.draw.io/mcp",
           description:
-            "No credentials are required; this connection only selects the MCP server. Leave blank to use the official hosted server at mcp.draw.io, which receives the diagram content you send. To keep diagrams on your own infrastructure, enter the /mcp URL of a self-hosted jgraph/drawio-mcp server.",
+            "No credentials are required; this connection only selects the MCP server. Leave blank to use the official hosted server at mcp.draw.io, which receives the diagram content you send. To keep diagrams on your own infrastructure, enter the /mcp URL of a self-hosted jgraph/drawio-mcp mcp-app-server, version 1.0.4 or later (earlier builds do not return the editor link).",
         },
       ],
       testAction: {
